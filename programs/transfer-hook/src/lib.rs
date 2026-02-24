@@ -11,19 +11,44 @@ use error::TransferHookError;
 
 declare_id!("7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj");
 
-/// Anchor discriminator for StablecoinConfig (first 8 bytes)
-const CONFIG_DISCRIMINATOR: [u8; 8] = [122, 20, 67, 116, 125, 204, 74, 59];
+/// Anchor discriminator for StablecoinConfig: sha256("account:StablecoinConfig")[..8]
+const CONFIG_DISCRIMINATOR: [u8; 8] = [127, 25, 244, 213, 1, 192, 101, 6];
 
-/// Offset of `paused` field in StablecoinConfig (after discriminator)
-/// authority(32) + pending_authority(33) + mint(32) + treasury(32) + decimals(1) = 130
-const CONFIG_PAUSED_OFFSET: usize = 8 + 130;
+/// Anchor discriminator for BlacklistEntry: sha256("account:BlacklistEntry")[..8]
+const BLACKLIST_DISCRIMINATOR: [u8; 8] = [218, 179, 231, 40, 141, 25, 168, 189];
 
-/// Anchor discriminator for BlacklistEntry
-const BLACKLIST_DISCRIMINATOR: [u8; 8] = [34, 111, 172, 10, 147, 225, 75, 12];
+/// Calculate the offset of the `paused` field in StablecoinConfig.
+/// Borsh serializes Option<Pubkey> as 1 byte (None) or 1+32 bytes (Some),
+/// so the offset varies depending on `pending_authority`.
+fn get_paused_offset(config_data: &[u8]) -> Option<usize> {
+    // Layout: disc(8) + authority(32) + Option<Pubkey> pending_authority + mint(32) + treasury(32) + decimals(1) + PAUSED
+    const OPTION_TAG_OFFSET: usize = 8 + 32; // = 40
+    if config_data.len() <= OPTION_TAG_OFFSET {
+        return None;
+    }
+    let pending_auth_size = if config_data[OPTION_TAG_OFFSET] == 0 { 1 } else { 33 };
+    let offset = 8 + 32 + pending_auth_size + 32 + 32 + 1;
+    if config_data.len() > offset { Some(offset) } else { None }
+}
 
-/// Offset of `active` field in BlacklistEntry (after discriminator)
-/// config(32) + address(32) + reason(4+128) + blacklisted_at(8) + blacklisted_by(32) = 236
-const BLACKLIST_ACTIVE_OFFSET: usize = 8 + 236;
+/// Calculate the offset of the `active` field in BlacklistEntry.
+/// Borsh serializes String as 4-byte length prefix + actual bytes (variable length),
+/// so subsequent field offsets depend on the actual string content.
+fn get_blacklist_active_offset(data: &[u8]) -> Option<usize> {
+    // Layout: disc(8) + config(32) + address(32) + String reason + blacklisted_at(8) + blacklisted_by(32) + ACTIVE
+    const REASON_LEN_OFFSET: usize = 8 + 32 + 32; // = 72
+    if data.len() < REASON_LEN_OFFSET + 4 {
+        return None;
+    }
+    let reason_len = u32::from_le_bytes([
+        data[REASON_LEN_OFFSET],
+        data[REASON_LEN_OFFSET + 1],
+        data[REASON_LEN_OFFSET + 2],
+        data[REASON_LEN_OFFSET + 3],
+    ]) as usize;
+    let offset = REASON_LEN_OFFSET + 4 + reason_len + 8 + 32;
+    if data.len() > offset { Some(offset) } else { None }
+}
 
 #[program]
 pub mod transfer_hook {
@@ -77,9 +102,10 @@ pub mod transfer_hook {
 
         // 2. Check if system is paused
         let config_data = ctx.accounts.config.try_borrow_data()?;
-        if config_data.len() > CONFIG_PAUSED_OFFSET {
-            let paused = config_data[CONFIG_PAUSED_OFFSET];
-            require!(paused == 0, TransferHookError::Paused);
+        if config_data[..8] == CONFIG_DISCRIMINATOR {
+            if let Some(paused_offset) = get_paused_offset(&config_data) {
+                require!(config_data[paused_offset] == 0, TransferHookError::Paused);
+            }
         }
         drop(config_data);
 
@@ -156,17 +182,15 @@ fn check_blacklist(
     let data = account.try_borrow_data()?;
 
     // Verify it's a BlacklistEntry by checking discriminator
-    if data.len() < BLACKLIST_ACTIVE_OFFSET + 1 {
-        return Ok(());
-    }
-    if data[..8] != BLACKLIST_DISCRIMINATOR {
+    if data.len() < 8 || data[..8] != BLACKLIST_DISCRIMINATOR {
         return Ok(());
     }
 
-    // Check the `active` field
-    let active = data[BLACKLIST_ACTIVE_OFFSET];
-    if active == 1 {
-        return Err(err.into());
+    // Dynamically find the `active` field offset (String reason has variable length)
+    if let Some(active_offset) = get_blacklist_active_offset(&data) {
+        if data[active_offset] == 1 {
+            return Err(err.into());
+        }
     }
 
     Ok(())

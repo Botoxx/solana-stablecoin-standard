@@ -94,28 +94,38 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
         extension_types.push(ExtensionType::DefaultAccountState);
     }
 
-    // Calculate mint account size with all extensions
-    let space = ExtensionType::try_calculate_account_len::<spl_token_2022::state::Mint>(
-        &extension_types,
-    )
-    .map_err(|_| SssError::Overflow)?;
+    // Calculate mint account size: extensions only (metadata is dynamically added later)
+    let extension_space =
+        ExtensionType::try_calculate_account_len::<spl_token_2022::state::Mint>(
+            &extension_types,
+        )
+        .map_err(|_| SssError::Overflow)?;
 
-    // Add space for metadata (name + symbol + uri + padding)
-    let metadata_space = 256 + params.name.len() + params.symbol.len() + params.uri.len();
-    let total_space = space
-        .checked_add(metadata_space)
-        .ok_or(SssError::Overflow)?;
+    // Metadata space: TLV header (2+2) + name + symbol + uri + mint pubkey + update_authority +
+    // additional_metadata vec len. Conservative estimate with padding.
+    let metadata_space = 4  // TLV type + length
+        + 4 + params.name.len()
+        + 4 + params.symbol.len()
+        + 4 + params.uri.len()
+        + 32  // mint pubkey
+        + 33  // update_authority (option)
+        + 4   // additional_metadata vec length
+        + 128; // padding for future fields
 
     let rent = &ctx.accounts.rent;
-    let lamports = rent.minimum_balance(total_space);
+    // Pre-fund lamports for full eventual size (extensions + metadata)
+    let full_size = extension_space
+        .checked_add(metadata_space)
+        .ok_or(SssError::Overflow)?;
+    let lamports = rent.minimum_balance(full_size);
 
-    // 1. Create mint account owned by Token-2022
+    // 1. Create mint account — space = extensions only, lamports = full eventual size
     invoke(
         &anchor_lang::solana_program::system_instruction::create_account(
             ctx.accounts.authority.key,
             ctx.accounts.mint.key,
             lamports,
-            total_space as u64,
+            extension_space as u64, // only extension space, metadata init will grow the account
             &TOKEN_2022_PROGRAM_ID,
         ),
         &[
@@ -129,21 +139,20 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
 
     // 2. Initialize permanent delegate (if enabled) — must be before InitializeMint
     if params.enable_permanent_delegate {
-        invoke_signed(
+        invoke(
             &token_instruction::initialize_permanent_delegate(
                 &TOKEN_2022_PROGRAM_ID,
                 ctx.accounts.mint.key,
                 &config_pubkey,
             )?,
             &[ctx.accounts.mint.to_account_info()],
-            &[config_seeds],
         )?;
     }
 
     // 3. Initialize transfer hook (if enabled)
     if params.enable_transfer_hook {
         let hook_program_id = params.transfer_hook_program_id.unwrap();
-        invoke_signed(
+        invoke(
             &transfer_hook_instruction::initialize(
                 &TOKEN_2022_PROGRAM_ID,
                 ctx.accounts.mint.key,
@@ -151,25 +160,23 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
                 Some(hook_program_id),
             )?,
             &[ctx.accounts.mint.to_account_info()],
-            &[config_seeds],
         )?;
     }
 
     // 4. Initialize default account state (if frozen)
     if params.default_account_frozen {
-        invoke_signed(
+        invoke(
             &default_account_state_instruction::initialize_default_account_state(
                 &TOKEN_2022_PROGRAM_ID,
                 ctx.accounts.mint.key,
                 &spl_token_2022::state::AccountState::Frozen,
             )?,
             &[ctx.accounts.mint.to_account_info()],
-            &[config_seeds],
         )?;
     }
 
     // 5. Initialize metadata pointer — points to mint itself
-    invoke_signed(
+    invoke(
         &metadata_pointer_instruction::initialize(
             &TOKEN_2022_PROGRAM_ID,
             ctx.accounts.mint.key,
@@ -177,11 +184,10 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
             Some(*ctx.accounts.mint.key),
         )?,
         &[ctx.accounts.mint.to_account_info()],
-        &[config_seeds],
     )?;
 
     // 6. Initialize mint — config PDA as both mint_authority and freeze_authority
-    invoke_signed(
+    invoke(
         &token_instruction::initialize_mint2(
             &TOKEN_2022_PROGRAM_ID,
             ctx.accounts.mint.key,
@@ -190,10 +196,9 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
             params.decimals,
         )?,
         &[ctx.accounts.mint.to_account_info()],
-        &[config_seeds],
     )?;
 
-    // 7. Initialize metadata on the mint
+    // 7. Initialize metadata on the mint (AFTER InitializeMint2 — this dynamically grows account)
     invoke_signed(
         &metadata_instruction::initialize(
             &TOKEN_2022_PROGRAM_ID,

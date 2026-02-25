@@ -44,8 +44,13 @@ fn get_paused_offset(config_data: &[u8]) -> Option<usize> {
     if config_data.len() <= OPTION_TAG_OFFSET {
         return None;
     }
-    let pending_auth_size = if config_data[OPTION_TAG_OFFSET] == 0 { 1 } else { 33 };
-    let offset = 8 + 32 + pending_auth_size + 32 + 32 + 1;
+    let pending_auth_size: usize = if config_data[OPTION_TAG_OFFSET] == 0 { 1 } else { 33 };
+    let offset = 8_usize
+        .checked_add(32)?
+        .checked_add(pending_auth_size)?
+        .checked_add(32)?
+        .checked_add(32)?
+        .checked_add(1)?;
     if config_data.len() > offset { Some(offset) } else { None }
 }
 
@@ -64,7 +69,11 @@ fn get_blacklist_active_offset(data: &[u8]) -> Option<usize> {
         data[REASON_LEN_OFFSET + 2],
         data[REASON_LEN_OFFSET + 3],
     ]) as usize;
-    let offset = REASON_LEN_OFFSET + 4 + reason_len + 8 + 32;
+    let offset = REASON_LEN_OFFSET
+        .checked_add(4)?
+        .checked_add(reason_len)?
+        .checked_add(8)?
+        .checked_add(32)?;
     if data.len() > offset { Some(offset) } else { None }
 }
 

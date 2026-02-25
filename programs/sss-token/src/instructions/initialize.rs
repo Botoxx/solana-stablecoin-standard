@@ -103,14 +103,18 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
 
     // Metadata space: TLV header (2+2) + name + symbol + uri + mint pubkey + update_authority +
     // additional_metadata vec len. Conservative estimate with padding.
-    let metadata_space = 4  // TLV type + length
-        + 4 + params.name.len()
-        + 4 + params.symbol.len()
-        + 4 + params.uri.len()
-        + 32  // mint pubkey
-        + 33  // update_authority (option)
-        + 4   // additional_metadata vec length
-        + 128; // padding for future fields
+    // All string lengths are bounded by MAX_NAME/SYMBOL/URI_LENGTH (validated above).
+    let metadata_space = 4_usize  // TLV type + length
+        .checked_add(4).ok_or(SssError::Overflow)?
+        .checked_add(params.name.len()).ok_or(SssError::Overflow)?
+        .checked_add(4).ok_or(SssError::Overflow)?
+        .checked_add(params.symbol.len()).ok_or(SssError::Overflow)?
+        .checked_add(4).ok_or(SssError::Overflow)?
+        .checked_add(params.uri.len()).ok_or(SssError::Overflow)?
+        .checked_add(32).ok_or(SssError::Overflow)?  // mint pubkey
+        .checked_add(33).ok_or(SssError::Overflow)?  // update_authority (option)
+        .checked_add(4).ok_or(SssError::Overflow)?   // additional_metadata vec length
+        .checked_add(128).ok_or(SssError::Overflow)?; // padding for future fields
 
     let rent = &ctx.accounts.rent;
     // Pre-fund lamports for full eventual size (extensions + metadata)

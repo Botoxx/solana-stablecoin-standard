@@ -8,6 +8,7 @@ const TOKEN_2022_ID: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxu
 const CONFIG_SEED: &[u8] = b"config";
 const MINTER_SEED: &[u8] = b"minter";
 const ROLE_SEED: &[u8] = b"role";
+const BLACKLIST_SEED: &[u8] = b"blacklist";
 
 fn find_config_pda(mint: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[CONFIG_SEED, mint.as_ref()], &sss_token::program_id())
@@ -27,6 +28,13 @@ fn find_role_pda(config: &Pubkey, role_type: u8, address: &Pubkey) -> (Pubkey, u
     )
 }
 
+fn find_blacklist_pda(config: &Pubkey, address: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[BLACKLIST_SEED, config.as_ref(), address.as_ref()],
+        &sss_token::program_id(),
+    )
+}
+
 #[derive(FuzzTestMethods)]
 struct FuzzTest {
     trident: Trident,
@@ -42,6 +50,11 @@ struct FuzzTest {
     minter_remaining: u64,
     is_paused: bool,
     initialized: bool,
+    // SSS-2 compliance tracking
+    blacklisted_addresses: Vec<Pubkey>,
+    enable_compliance: bool,
+    // Token balance tracking for burn/seize
+    authority_balance: u64,
 }
 
 #[flow_executor]
@@ -59,6 +72,9 @@ impl FuzzTest {
             minter_remaining: 0,
             is_paused: false,
             initialized: false,
+            blacklisted_addresses: Vec::new(),
+            enable_compliance: false,
+            authority_balance: 0,
         }
     }
 
@@ -218,6 +234,7 @@ impl FuzzTest {
         if res.is_success() {
             self.total_minted += amount;
             self.minter_remaining = self.minter_remaining.saturating_sub(amount);
+            self.authority_balance += amount;
         }
     }
 
@@ -292,6 +309,140 @@ impl FuzzTest {
         );
     }
 
+    /// Fuzz flow: burn random amount of tokens held by authority
+    #[flow]
+    fn flow_burn(&mut self) {
+        if !self.initialized || self.is_paused || self.authority_balance == 0 {
+            return;
+        }
+
+        let amount = self.trident.random_from_range(1u64..=self.authority_balance.min(50_000_000));
+
+        let authority = self.authority_key;
+        let config = self.config_key;
+        let mint = self.mint_key;
+        let (burner_role_pda, _) = find_role_pda(&config, 1, &authority);
+
+        let burner_ata = self.trident.get_associated_token_address(
+            &mint, &authority, &TOKEN_2022_ID,
+        );
+
+        let ix = sss_token::BurnInstruction::data(sss_token::BurnInstructionData::new(amount))
+            .accounts(sss_token::BurnInstructionAccounts::new(
+                authority,
+                config,
+                burner_role_pda,
+                mint,
+                burner_ata,
+                TOKEN_2022_ID,
+            ))
+            .instruction();
+
+        let res = self.trident.process_transaction(&[ix], Some("burn"));
+        if res.is_success() {
+            self.total_burned += amount;
+            self.authority_balance = self.authority_balance.saturating_sub(amount);
+        }
+    }
+
+    /// Fuzz flow: add random address to blacklist (requires SSS-2 init)
+    #[flow]
+    fn flow_blacklist_add(&mut self) {
+        if !self.initialized || !self.enable_compliance {
+            return;
+        }
+
+        let target = self.trident.random_pubkey();
+        let authority = self.authority_key;
+        let config = self.config_key;
+        let (blacklister_role_pda, _) = find_role_pda(&config, 3, &authority);
+        let (blacklist_pda, _) = find_blacklist_pda(&config, &target);
+
+        let ix = sss_token::AddToBlacklistInstruction::data(
+            sss_token::AddToBlacklistInstructionData::new(
+                target,
+                "Fuzz test blacklist".to_string(),
+            ),
+        )
+        .accounts(sss_token::AddToBlacklistInstructionAccounts::new(
+            authority,
+            config,
+            blacklister_role_pda,
+            blacklist_pda,
+        ))
+        .instruction();
+
+        let res = self.trident.process_transaction(&[ix], Some("blacklist_add"));
+        if res.is_success() {
+            self.blacklisted_addresses.push(target);
+        }
+    }
+
+    /// Fuzz flow: remove address from blacklist
+    #[flow]
+    fn flow_blacklist_remove(&mut self) {
+        if !self.initialized || !self.enable_compliance || self.blacklisted_addresses.is_empty() {
+            return;
+        }
+
+        let idx = self.trident.random_from_range(0usize..=self.blacklisted_addresses.len().saturating_sub(1));
+        let target = self.blacklisted_addresses[idx];
+        let authority = self.authority_key;
+        let config = self.config_key;
+        let (blacklister_role_pda, _) = find_role_pda(&config, 3, &authority);
+        let (blacklist_pda, _) = find_blacklist_pda(&config, &target);
+
+        let ix = sss_token::RemoveFromBlacklistInstruction::data(
+            sss_token::RemoveFromBlacklistInstructionData::new(target),
+        )
+        .accounts(sss_token::RemoveFromBlacklistInstructionAccounts::new(
+            authority,
+            config,
+            blacklister_role_pda,
+            blacklist_pda,
+        ))
+        .instruction();
+
+        let res = self.trident.process_transaction(&[ix], Some("blacklist_remove"));
+        if res.is_success() {
+            self.blacklisted_addresses.remove(idx);
+        }
+    }
+
+    /// Fuzz flow: attempt unauthorized blacklist (must fail without role)
+    #[flow]
+    fn flow_unauthorized_blacklist(&mut self) {
+        if !self.initialized {
+            return;
+        }
+
+        let rando = self.trident.random_keypair();
+        let target = self.trident.random_pubkey();
+        let config = self.config_key;
+        let (fake_role, _) = find_role_pda(&config, 3, &rando.pubkey());
+        let (blacklist_pda, _) = find_blacklist_pda(&config, &target);
+
+        let ix = sss_token::AddToBlacklistInstruction::data(
+            sss_token::AddToBlacklistInstructionData::new(
+                target,
+                "Unauthorized blacklist".to_string(),
+            ),
+        )
+        .accounts(sss_token::AddToBlacklistInstructionAccounts::new(
+            rando.pubkey(),
+            config,
+            fake_role,
+            blacklist_pda,
+        ))
+        .instruction();
+
+        let res = self.trident.process_transaction(&[ix], Some("unauthorized_blacklist"));
+        assert!(
+            !res.is_success(),
+            "INVARIANT VIOLATION: unauthorized blacklist succeeded!"
+        );
+    }
+
     /// Fuzz flow: update minter quota with random value
     #[flow]
     fn flow_update_quota(&mut self) {
@@ -330,7 +481,7 @@ impl FuzzTest {
             return;
         }
 
-        // Invariant: total_minted >= total_burned
+        // Invariant 1: total_minted >= total_burned (supply never negative)
         assert!(
             self.total_minted >= self.total_burned,
             "SUPPLY INVARIANT: burned ({}) exceeds minted ({})",
@@ -338,7 +489,17 @@ impl FuzzTest {
             self.total_minted
         );
 
-        // Invariant: quota remaining <= quota total
+        // Invariant 2: tracked balance == minted - burned
+        assert_eq!(
+            self.authority_balance,
+            self.total_minted.saturating_sub(self.total_burned),
+            "BALANCE INVARIANT: tracked balance ({}) != minted ({}) - burned ({})",
+            self.authority_balance,
+            self.total_minted,
+            self.total_burned
+        );
+
+        // Invariant 3: quota remaining <= quota total
         assert!(
             self.minter_remaining <= self.minter_quota,
             "QUOTA INVARIANT: remaining ({}) exceeds total ({})",
@@ -346,7 +507,7 @@ impl FuzzTest {
             self.minter_quota
         );
 
-        // Verify on-chain config state matches our tracking
+        // Invariant 4: verify on-chain config state matches our tracking
         let config_account: Option<StablecoinConfig> =
             self.trident.get_account_with_type(&self.config_key, 8);
 
@@ -355,6 +516,18 @@ impl FuzzTest {
                 config.paused, self.is_paused,
                 "PAUSE STATE INVARIANT: on-chain={} tracked={}",
                 config.paused, self.is_paused
+            );
+
+            // Invariant 5: on-chain totals match tracked totals
+            assert_eq!(
+                config.total_minted, self.total_minted,
+                "MINTED INVARIANT: on-chain={} tracked={}",
+                config.total_minted, self.total_minted
+            );
+            assert_eq!(
+                config.total_burned, self.total_burned,
+                "BURNED INVARIANT: on-chain={} tracked={}",
+                config.total_burned, self.total_burned
             );
         }
     }

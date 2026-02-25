@@ -2,6 +2,7 @@ import express from "express";
 import { loadConfig } from "../../shared/config";
 import { createLogger } from "../../shared/logger";
 import { getPool, closePool } from "../../shared/db";
+import { authMiddleware } from "../../shared/auth";
 import { HealthResponse } from "../../shared/types";
 import { createRoutes } from "./routes";
 import { OFACScreeningProvider } from "./screening";
@@ -25,6 +26,7 @@ app.get("/health", (_req, res) => {
 
 const pool = getPool(config.postgresUrl);
 const screener = new OFACScreeningProvider();
+app.use(authMiddleware);
 app.use("/", createRoutes(pool, logger, screener));
 
 const server = app.listen(config.port, () => {

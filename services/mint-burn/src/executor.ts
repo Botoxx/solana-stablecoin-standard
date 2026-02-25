@@ -19,8 +19,16 @@ const ROLE_BURNER = 1;
 function loadAuthorityKeypair(): Keypair {
   const raw = process.env.AUTHORITY_KEYPAIR;
   if (!raw) throw new Error("AUTHORITY_KEYPAIR env var required (JSON byte array)");
-  const secret = Uint8Array.from(JSON.parse(raw));
-  return Keypair.fromSecretKey(secret);
+  let parsed: number[];
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("AUTHORITY_KEYPAIR contains invalid JSON (value not logged for security)");
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 64) {
+    throw new Error(`AUTHORITY_KEYPAIR must be a 64-byte array, got ${parsed?.length ?? 0} elements`);
+  }
+  return Keypair.fromSecretKey(Uint8Array.from(parsed));
 }
 
 function deriveConfigPda(mint: PublicKey, programId: PublicKey): [PublicKey, number] {
@@ -65,11 +73,13 @@ export async function processPendingRequests(
   const request = result.rows[0];
   logger.info({ id: request.id, action: request.action }, "Processing request");
 
+  let onChainSuccess = false;
+  let signature: string | undefined;
+
   try {
     const configPda = new PublicKey(request.config_pda);
     const config = await (program.account as any)["stablecoinConfig"].fetch(configPda);
     const mint = config.mint as PublicKey;
-    let signature: string;
 
     if (request.action === "mint") {
       const recipient = new PublicKey(request.recipient);
@@ -108,6 +118,8 @@ export async function processPendingRequests(
         .rpc();
     }
 
+    onChainSuccess = true;
+
     await pool.query(
       `UPDATE mint_burn_requests
        SET status = 'completed', signature = $1, updated_at = NOW()
@@ -125,12 +137,22 @@ export async function processPendingRequests(
 
     logger.info({ id: request.id, signature }, "Request completed");
   } catch (err: any) {
+    if (onChainSuccess) {
+      // On-chain tx succeeded but DB update failed — do NOT mark as failed
+      logger.error(
+        { id: request.id, signature, err },
+        "CRITICAL: On-chain tx succeeded but DB update failed. Manual reconciliation required."
+      );
+      return;
+    }
     await pool.query(
       `UPDATE mint_burn_requests
        SET status = 'failed', error = $1, updated_at = NOW()
        WHERE id = $2`,
       [err.message, request.id]
-    );
+    ).catch((dbErr) => {
+      logger.error({ id: request.id, dbErr }, "Failed to update request status");
+    });
     logger.error({ id: request.id, err }, "Request failed");
   }
 }

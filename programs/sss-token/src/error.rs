@@ -48,4 +48,6 @@ pub enum SssError {
     InvalidMint,
     #[msg("Blacklist reason exceeds maximum length")]
     BlacklistReasonTooLong,
+    #[msg("Role already assigned — revoke first")]
+    RoleAlreadyAssigned,
 }

@@ -283,16 +283,14 @@ export async function assertError(
     }
     if (errorCode) {
       const errStr = err.toString();
-      if (
-        !errStr.includes(errorCode.toString()) &&
-        !errStr.includes(`Error Code: ${errorCode}`)
-      ) {
-        // Also check for custom error number
-        if (typeof errorCode === "number" && !errStr.includes(`0x${errorCode.toString(16)}`)) {
-          throw new Error(
-            `Expected error code ${errorCode} but got: ${errStr}`
-          );
-        }
+      const found =
+        errStr.includes(errorCode.toString()) ||
+        errStr.includes(`Error Code: ${errorCode}`) ||
+        (typeof errorCode === "number" && errStr.includes(`0x${errorCode.toString(16)}`));
+      if (!found) {
+        throw new Error(
+          `Expected error code "${errorCode}" but got: ${errStr}`
+        );
       }
     }
   }

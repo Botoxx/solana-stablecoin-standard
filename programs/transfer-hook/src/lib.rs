@@ -1,9 +1,13 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program::invoke_signed;
 use anchor_lang::system_program;
 use spl_tlv_account_resolution::{
     account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList,
 };
+use spl_token_2022::extension::{
+    BaseStateWithExtensions, StateWithExtensions,
+    transfer_hook::TransferHookAccount,
+};
+use spl_token_2022::state::Account as TokenAccount;
 use spl_transfer_hook_interface::instruction::TransferHookInstruction;
 
 pub mod error;
@@ -109,29 +113,37 @@ pub mod transfer_hook {
 
     pub fn transfer_hook(ctx: Context<ExecuteInstruction>, _amount: u64) -> Result<()> {
         // 1. Verify the source token account is currently transferring
-        // The "transferring" flag is at a known offset in the Token-2022 account
-        // For transfer hooks, we check this via the account data
         let source_account = &ctx.accounts.source_token;
         check_is_transferring(source_account)?;
 
-        // 2. Check if system is paused
+        let sss_program_key = ctx.accounts.sss_token_program.key();
+
+        // 2. Validate config account owner matches sss-token program
+        require!(
+            *ctx.accounts.config.owner == sss_program_key,
+            TransferHookError::InvalidConfig
+        );
+
+        // 3. Check if system is paused
         let config_data = ctx.accounts.config.try_borrow_data()?;
-        if config_data[..8] == CONFIG_DISCRIMINATOR {
+        if config_data.len() >= 8 && config_data[..8] == CONFIG_DISCRIMINATOR {
             if let Some(paused_offset) = get_paused_offset(&config_data) {
                 require!(config_data[paused_offset] == 0, TransferHookError::Paused);
             }
         }
         drop(config_data);
 
-        // 3. Check source blacklist
+        // 4. Check source blacklist
         check_blacklist(
             &ctx.accounts.source_blacklist_entry,
+            &sss_program_key,
             TransferHookError::SenderBlacklisted,
         )?;
 
-        // 4. Check dest blacklist
+        // 5. Check dest blacklist
         check_blacklist(
             &ctx.accounts.dest_blacklist_entry,
+            &sss_program_key,
             TransferHookError::RecipientBlacklisted,
         )?;
 
@@ -157,39 +169,33 @@ pub mod transfer_hook {
 }
 
 fn check_is_transferring(account: &AccountInfo) -> Result<()> {
-    let data = account.try_borrow_data()?;
-    // Token-2022 TransferHook extension adds a "transferring" flag
-    // at the end of the extension data. We check the account has
-    // the transferring state set by the Token-2022 program.
-    // The transfer hook is only called during an active transfer,
-    // so we verify this to prevent direct invocation attacks.
-    // The flag is in the TransferHookAccount extension.
-    // For simplicity and safety, we check that the account is owned
-    // by Token-2022, which ensures this came from a legitimate transfer.
     if account.owner != &spl_token_2022::ID {
         return Err(TransferHookError::IsNotCurrentlyTransferring.into());
     }
-
-    // Check the transferring flag in the TransferHookAccount extension
-    // The extension data starts after the base Account (165 bytes for Token-2022)
-    // We need to find the TransferHookAccount extension and check its transferring flag
-    // Extension type TransferHookAccount = 16, the `transferring` field is a bool at the start
-    if data.len() >= 169 {
-        // The account has extensions. We'll rely on the fact that the SPL Token-2022
-        // program only calls the hook during an active transfer, and we verified
-        // the account owner above. This is the standard pattern.
-        Ok(())
-    } else {
-        Err(TransferHookError::IsNotCurrentlyTransferring.into())
+    let data = account.try_borrow_data()?;
+    let token_account = StateWithExtensions::<TokenAccount>::unpack(&data)
+        .map_err(|_| error!(TransferHookError::IsNotCurrentlyTransferring))?;
+    let hook_ext = token_account
+        .get_extension::<TransferHookAccount>()
+        .map_err(|_| error!(TransferHookError::IsNotCurrentlyTransferring))?;
+    if !bool::from(hook_ext.transferring) {
+        return Err(TransferHookError::IsNotCurrentlyTransferring.into());
     }
+    Ok(())
 }
 
 fn check_blacklist(
     account: &AccountInfo,
+    sss_program_id: &Pubkey,
     err: TransferHookError,
 ) -> Result<()> {
     // If the account doesn't exist or has no data, the address is not blacklisted
     if account.data_is_empty() {
+        return Ok(());
+    }
+
+    // Verify owner is the sss-token program
+    if account.owner != sss_program_id {
         return Ok(());
     }
 
@@ -266,11 +272,12 @@ pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    /// CHECK: ExtraAccountMetaList PDA — validated by seeds
+    /// CHECK: ExtraAccountMetaList PDA — validated by seeds + emptiness check
     #[account(
         mut,
         seeds = [b"extra-account-metas", mint.key().as_ref()],
         bump,
+        constraint = extra_account_meta_list.data_is_empty() @ TransferHookError::InvalidExtraAccountMetas,
     )]
     pub extra_account_meta_list: AccountInfo<'info>,
 

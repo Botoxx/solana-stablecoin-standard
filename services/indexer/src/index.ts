@@ -4,6 +4,7 @@ import { loadConfig } from "../../shared/config";
 import { createLogger } from "../../shared/logger";
 import { getPool, closePool } from "../../shared/db";
 import { logAudit } from "../../shared/audit";
+import { authMiddleware } from "../../shared/auth";
 import { HealthResponse, SssEvent } from "../../shared/types";
 import { parseTransactionLogs, initEventDiscriminators } from "./parser";
 import { storeEvent } from "./store";
@@ -26,19 +27,19 @@ app.get("/health", (_req, res) => {
   res.json(health);
 });
 
-app.get("/events", async (req, res) => {
+app.get("/events", authMiddleware, async (req, res) => {
   try {
     const pool = getPool(config.postgresUrl);
     const { getEvents } = await import("./store");
     const events = await getEvents(pool, {
       name: req.query.name as string | undefined,
-      limit: parseInt((req.query.limit as string) || "100"),
-      offset: parseInt((req.query.offset as string) || "0"),
+      limit: Math.min(Math.max(parseInt((req.query.limit as string) || "100") || 100, 1), 1000),
+      offset: Math.max(parseInt((req.query.offset as string) || "0") || 0, 0),
     });
     res.json(events);
   } catch (err: any) {
     logger.error({ err }, "Failed to fetch events");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -101,7 +102,8 @@ async function startSubscription() {
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port }, "Indexer service started");
   startSubscription().catch((err) => {
-    logger.error({ err }, "Failed to start subscription");
+    logger.error({ err }, "Failed to start subscription — exiting");
+    process.exit(1);
   });
 });
 

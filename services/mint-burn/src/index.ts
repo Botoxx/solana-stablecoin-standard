@@ -2,6 +2,7 @@ import express from "express";
 import { loadConfig } from "../../shared/config";
 import { createLogger } from "../../shared/logger";
 import { getPool, closePool } from "../../shared/db";
+import { authMiddleware } from "../../shared/auth";
 import { HealthResponse } from "../../shared/types";
 import { createRoutes } from "./routes";
 import { startExecutor } from "./executor";
@@ -24,6 +25,7 @@ app.get("/health", (_req, res) => {
 });
 
 const pool = getPool(config.postgresUrl);
+app.use(authMiddleware);
 app.use("/", createRoutes(pool, logger));
 
 let stopExecutor: (() => void) | null = null;

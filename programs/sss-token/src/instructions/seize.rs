@@ -13,6 +13,7 @@ pub struct Seize<'info> {
     pub seizer: Signer<'info>,
 
     #[account(
+        mut,
         seeds = [CONFIG_SEED, config.mint.as_ref()],
         bump = config.bump,
         constraint = config.enable_permanent_delegate @ SssError::ComplianceNotEnabled,
@@ -50,17 +51,24 @@ pub fn handler(ctx: Context<Seize>, amount: u64) -> Result<()> {
 
     // Verify the source account is frozen (freeze-before-seize)
     let source_data = ctx.accounts.source_token_account.try_borrow_data()?;
-    // Token-2022 account: state byte is at offset 108
-    // AccountState: 0=Uninitialized, 1=Initialized, 2=Frozen
     require!(source_data.len() > 108, SssError::AccountNotFrozen);
+    // Token-2022 account layout: mint(32) at offset 0
+    let source_mint = Pubkey::try_from(&source_data[0..32])
+        .map_err(|_| SssError::InvalidMint)?;
+    require!(source_mint == ctx.accounts.config.mint, SssError::InvalidMint);
+    // AccountState at offset 108: 0=Uninitialized, 1=Initialized, 2=Frozen
     let account_state = source_data[108];
     require!(account_state == 2, SssError::AccountNotFrozen);
     drop(source_data);
 
-    // Validate treasury token account owner matches config.treasury
-    // Token-2022 account layout: mint(32) + owner(32) at offset 32
+    // Validate treasury token account
     let treasury_data = ctx.accounts.treasury_token_account.try_borrow_data()?;
     require!(treasury_data.len() >= 64, SssError::InvalidTreasury);
+    // Validate mint matches config.mint
+    let treasury_mint = Pubkey::try_from(&treasury_data[0..32])
+        .map_err(|_| SssError::InvalidMint)?;
+    require!(treasury_mint == ctx.accounts.config.mint, SssError::InvalidMint);
+    // Validate owner matches config.treasury
     let treasury_owner = Pubkey::try_from(&treasury_data[32..64])
         .map_err(|_| SssError::InvalidTreasury)?;
     require!(treasury_owner == ctx.accounts.config.treasury, SssError::InvalidTreasury);
@@ -143,6 +151,15 @@ pub fn handler(ctx: Context<Seize>, amount: u64) -> Result<()> {
         ],
         &[config_seeds],
     )?;
+
+    // Update accounting: seize = burn from source + mint to treasury
+    let config = &mut ctx.accounts.config;
+    config.total_burned = config.total_burned
+        .checked_add(amount)
+        .ok_or(SssError::Overflow)?;
+    config.total_minted = config.total_minted
+        .checked_add(amount)
+        .ok_or(SssError::Overflow)?;
 
     let clock = Clock::get()?;
     emit!(SeizeEvent {

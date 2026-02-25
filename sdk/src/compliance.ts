@@ -72,8 +72,12 @@ export class ComplianceModule {
       return (await this.program.account.blacklistEntry.fetch(
         blacklistPda
       )) as unknown as BlacklistState;
-    } catch {
-      return null;
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      if (msg.includes("Account does not exist") || msg.includes("Could not find")) {
+        return null;
+      }
+      throw err;
     }
   }
 

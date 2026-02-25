@@ -47,6 +47,11 @@ pub fn handler(
 
     let action_str = match action {
         RoleAction::Assign => {
+            // Guard against re-assignment — require fresh (zeroed) account
+            require!(
+                role_assignment.config == Pubkey::default(),
+                SssError::RoleAlreadyAssigned
+            );
             role_assignment.config = ctx.accounts.config.key();
             role_assignment.role_type = role.to_u8();
             role_assignment.address = address;

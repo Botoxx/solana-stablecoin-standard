@@ -220,8 +220,8 @@ export function parseTransactionLogs(
       const reader = new BorshReader(buffer, 8); // skip 8-byte discriminator
       const { authority, timestamp, data } = decoder(reader);
       events.push({ name, authority, timestamp: timestamp * 1000, signature, slot, data });
-    } catch {
-      // Skip unparseable logs
+    } catch (err) {
+      console.warn(`[parser] Failed to parse event from tx ${signature}: ${err}`);
     }
   }
 

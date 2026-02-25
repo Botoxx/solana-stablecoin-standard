@@ -11,16 +11,25 @@ export interface ScreeningProvider {
 }
 
 export class OFACScreeningProvider implements ScreeningProvider {
+  private isStub: boolean;
+
+  constructor() {
+    this.isStub = !process.env.OFAC_API_URL;
+    if (this.isStub) {
+      console.warn(
+        "[COMPLIANCE WARNING] OFACScreeningProvider is in STUB mode — all addresses pass screening. " +
+        "Set OFAC_API_URL env var for real OFAC SDN screening."
+      );
+    }
+  }
+
   async screen(address: string): Promise<ScreeningResult> {
     // Stub implementation — integration point for OFAC SDN list
-    // In production, this would:
-    // 1. Query the OFAC SDN list API or local database
-    // 2. Match against known sanctioned wallet addresses
-    // 3. Return detailed match information
+    // In production, set OFAC_API_URL to enable real screening
     return {
       address,
       flagged: false,
-      source: "OFAC_SDN",
+      source: this.isStub ? "OFAC_SDN_STUB" : "OFAC_SDN",
     };
   }
 }

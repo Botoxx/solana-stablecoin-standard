@@ -1,8 +1,13 @@
 import { Router } from "express";
 import { Pool } from "pg";
 import { Logger } from "pino";
+import { PublicKey } from "@solana/web3.js";
 import { logAudit } from "../../shared/audit";
 import { ScreeningProvider } from "./screening";
+
+function isValidPubkey(s: string): boolean {
+  try { new PublicKey(s); return true; } catch { return false; }
+}
 
 export function createRoutes(
   pool: Pool,
@@ -13,8 +18,8 @@ export function createRoutes(
 
   router.get("/blacklist", async (req, res) => {
     try {
-      const limit = parseInt((req.query.limit as string) || "50");
-      const offset = parseInt((req.query.offset as string) || "0");
+      const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "50") || 50, 1), 1000);
+      const offset = Math.max(parseInt((req.query.offset as string) || "0") || 0, 0);
 
       const result = await pool.query(
         `SELECT address, reason, blacklisted_by, blacklisted_at, active
@@ -24,7 +29,7 @@ export function createRoutes(
       res.json(result.rows);
     } catch (err: any) {
       logger.error({ err }, "Failed to list blacklist");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -33,6 +38,9 @@ export function createRoutes(
       const { address, reason, operator } = req.body;
       if (!address || !reason) {
         return res.status(400).json({ error: "Missing address or reason" });
+      }
+      if (!isValidPubkey(String(address))) {
+        return res.status(400).json({ error: "Invalid address — must be a valid Solana public key" });
       }
 
       await pool.query(
@@ -53,7 +61,7 @@ export function createRoutes(
       res.status(201).json({ address, status: "blacklisted" });
     } catch (err: any) {
       logger.error({ err }, "Failed to blacklist");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -74,7 +82,7 @@ export function createRoutes(
       res.json({ address: req.params.address, status: "removed" });
     } catch (err: any) {
       logger.error({ err }, "Failed to remove from blacklist");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -82,6 +90,9 @@ export function createRoutes(
     try {
       const { address } = req.body;
       if (!address) return res.status(400).json({ error: "Missing address" });
+      if (!isValidPubkey(String(address))) {
+        return res.status(400).json({ error: "Invalid address — must be a valid Solana public key" });
+      }
 
       const result = await screener.screen(address);
 
@@ -96,14 +107,14 @@ export function createRoutes(
       res.json(result);
     } catch (err: any) {
       logger.error({ err }, "Screening failed");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
   router.get("/audit-log", async (req, res) => {
     try {
-      const limit = parseInt((req.query.limit as string) || "100");
-      const offset = parseInt((req.query.offset as string) || "0");
+      const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "100") || 100, 1), 1000);
+      const offset = Math.max(parseInt((req.query.offset as string) || "0") || 0, 0);
       const action = req.query.action as string | undefined;
 
       let query = `SELECT * FROM audit_log`;
@@ -122,7 +133,7 @@ export function createRoutes(
       res.json(result.rows);
     } catch (err: any) {
       logger.error({ err }, "Failed to fetch audit log");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

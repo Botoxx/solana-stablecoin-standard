@@ -12,4 +12,6 @@ pub enum TransferHookError {
     IsNotCurrentlyTransferring,
     #[msg("Invalid extra account metas")]
     InvalidExtraAccountMetas,
+    #[msg("Invalid StablecoinConfig account")]
+    InvalidConfig,
 }

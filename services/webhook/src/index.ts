@@ -2,6 +2,7 @@ import express from "express";
 import { loadConfig } from "../../shared/config";
 import { createLogger } from "../../shared/logger";
 import { getPool, closePool } from "../../shared/db";
+import { authMiddleware } from "../../shared/auth";
 import { HealthResponse, SssEvent } from "../../shared/types";
 import { createRoutes } from "./routes";
 import { dispatchEvent } from "./dispatcher";
@@ -26,7 +27,7 @@ app.get("/health", (_req, res) => {
 const pool = getPool(config.postgresUrl);
 
 // Internal endpoint called by indexer to dispatch events to webhook subscribers
-app.post("/dispatch", async (req, res) => {
+app.post("/dispatch", authMiddleware, async (req, res) => {
   try {
     const event = req.body as SssEvent;
     if (!event.name) {
@@ -36,10 +37,11 @@ app.post("/dispatch", async (req, res) => {
     res.json({ dispatched: true, event: event.name });
   } catch (err: any) {
     logger.error({ err }, "Failed to dispatch event");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
+app.use(authMiddleware);
 app.use("/", createRoutes(pool, logger));
 
 const server = app.listen(config.port, () => {

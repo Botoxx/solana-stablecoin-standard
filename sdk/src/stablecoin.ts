@@ -47,6 +47,11 @@ function createProvider(connection: Connection, authority: Keypair): AnchorProvi
   return new AnchorProvider(connection, wallet, { commitment: "confirmed" });
 }
 
+function isAccountNotFoundError(err: any): boolean {
+  const msg = err?.message ?? String(err);
+  return msg.includes("Account does not exist") || msg.includes("Could not find");
+}
+
 export class SolanaStablecoin {
   public readonly compliance: ComplianceModule;
   public readonly mintAddress: PublicKey;
@@ -396,8 +401,9 @@ export class SolanaStablecoin {
     const [minterPda] = getMinterPda(this.configPda, address);
     try {
       return (await this.program.account.minterConfig.fetch(minterPda)) as unknown as MinterState;
-    } catch {
-      return null;
+    } catch (err: any) {
+      if (isAccountNotFoundError(err)) return null;
+      throw err;
     }
   }
 
@@ -412,8 +418,9 @@ export class SolanaStablecoin {
     const [rolePda] = getRolePda(this.configPda, role, address);
     try {
       return (await this.program.account.roleAssignment.fetch(rolePda)) as unknown as RoleState;
-    } catch {
-      return null;
+    } catch (err: any) {
+      if (isAccountNotFoundError(err)) return null;
+      throw err;
     }
   }
 

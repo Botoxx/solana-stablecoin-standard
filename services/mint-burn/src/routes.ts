@@ -1,9 +1,23 @@
 import { Router } from "express";
 import { Pool } from "pg";
 import { v4 as uuidv4 } from "uuid";
+import { PublicKey } from "@solana/web3.js";
 import { MintBurnRequest } from "../../shared/types";
 import { logAudit } from "../../shared/audit";
 import { Logger } from "pino";
+
+const MAX_U64 = "18446744073709551615";
+
+function isValidPubkey(s: string): boolean {
+  try { new PublicKey(s); return true; } catch { return false; }
+}
+
+function isValidAmount(s: string): boolean {
+  if (!/^\d+$/.test(s)) return false;
+  if (s.length > MAX_U64.length) return false;
+  if (s.length === MAX_U64.length && s > MAX_U64) return false;
+  return BigInt(s) > 0n;
+}
 
 export function createRoutes(pool: Pool, logger: Logger): Router {
   const router = Router();
@@ -13,6 +27,15 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
       const { amount, recipient, configPda } = req.body;
       if (!amount || !recipient || !configPda) {
         return res.status(400).json({ error: "Missing amount, recipient, or configPda" });
+      }
+      if (!isValidAmount(String(amount))) {
+        return res.status(400).json({ error: "Invalid amount — must be a positive integer within u64 range" });
+      }
+      if (!isValidPubkey(String(recipient))) {
+        return res.status(400).json({ error: "Invalid recipient — must be a valid Solana public key" });
+      }
+      if (!isValidPubkey(String(configPda))) {
+        return res.status(400).json({ error: "Invalid configPda — must be a valid Solana public key" });
       }
 
       const id = uuidv4();
@@ -33,7 +56,7 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
       res.status(201).json({ id, status: "pending" });
     } catch (err: any) {
       logger.error({ err }, "Failed to create mint request");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -42,6 +65,15 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
       const { amount, tokenAccount, configPda } = req.body;
       if (!amount || !tokenAccount || !configPda) {
         return res.status(400).json({ error: "Missing amount, tokenAccount, or configPda" });
+      }
+      if (!isValidAmount(String(amount))) {
+        return res.status(400).json({ error: "Invalid amount — must be a positive integer within u64 range" });
+      }
+      if (!isValidPubkey(String(tokenAccount))) {
+        return res.status(400).json({ error: "Invalid tokenAccount — must be a valid Solana public key" });
+      }
+      if (!isValidPubkey(String(configPda))) {
+        return res.status(400).json({ error: "Invalid configPda — must be a valid Solana public key" });
       }
 
       const id = uuidv4();
@@ -62,7 +94,7 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
       res.status(201).json({ id, status: "pending" });
     } catch (err: any) {
       logger.error({ err }, "Failed to create burn request");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -81,14 +113,14 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
       res.json(result.rows[0]);
     } catch (err: any) {
       logger.error({ err }, "Failed to fetch request");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
   router.get("/requests", async (req, res) => {
     try {
-      const limit = parseInt((req.query.limit as string) || "50");
-      const offset = parseInt((req.query.offset as string) || "0");
+      const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "50") || 50, 1), 1000);
+      const offset = Math.max(parseInt((req.query.offset as string) || "0") || 0, 0);
 
       const result = await pool.query(
         `SELECT id, action, amount, status, signature, created_at
@@ -99,7 +131,7 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
       res.json(result.rows);
     } catch (err: any) {
       logger.error({ err }, "Failed to list requests");
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

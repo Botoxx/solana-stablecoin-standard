@@ -43,7 +43,7 @@ pub struct MinterConfig {
     pub quota_total: u64,
     pub quota_remaining: u64,
     pub bump: u8,
-    pub _reserved: [u8; 32],
+    pub _reserved: [u8; 64],
 }
 
 impl MinterConfig {
@@ -53,7 +53,7 @@ impl MinterConfig {
         + 8                    // quota_total
         + 8                    // quota_remaining
         + 1                    // bump
-        + 32;                  // _reserved
+        + 64;                  // _reserved
 }
 
 #[account]
@@ -64,7 +64,7 @@ pub struct RoleAssignment {
     pub assigned_by: Pubkey,
     pub assigned_at: i64,
     pub bump: u8,
-    pub _reserved: [u8; 32],
+    pub _reserved: [u8; 64],
 }
 
 impl RoleAssignment {
@@ -75,7 +75,7 @@ impl RoleAssignment {
         + 32                   // assigned_by
         + 8                    // assigned_at
         + 1                    // bump
-        + 32;                  // _reserved
+        + 64;                  // _reserved
 }
 
 #[account]
@@ -87,7 +87,7 @@ pub struct BlacklistEntry {
     pub blacklisted_by: Pubkey,
     pub active: bool,
     pub bump: u8,
-    pub _reserved: [u8; 32],
+    pub _reserved: [u8; 64],
 }
 
 impl BlacklistEntry {
@@ -99,7 +99,7 @@ impl BlacklistEntry {
         + 32                   // blacklisted_by
         + 1                    // active
         + 1                    // bump
-        + 32;                  // _reserved
+        + 64;                  // _reserved
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]

@@ -53,7 +53,7 @@ pub fn handler(
             role_assignment.assigned_by = ctx.accounts.authority.key();
             role_assignment.assigned_at = clock.unix_timestamp;
             role_assignment.bump = ctx.bumps.role_assignment;
-            role_assignment._reserved = [0u8; 32];
+            role_assignment._reserved = [0u8; 64];
             "assign"
         }
         RoleAction::Revoke => {

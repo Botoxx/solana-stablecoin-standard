@@ -59,7 +59,7 @@ pub fn handler(ctx: Context<AddToBlacklist>, address: Pubkey, reason: String) ->
     entry.blacklisted_by = ctx.accounts.blacklister.key();
     entry.active = true;
     entry.bump = ctx.bumps.blacklist_entry;
-    entry._reserved = [0u8; 32];
+    entry._reserved = [0u8; 64];
 
     emit!(BlacklistAddEvent {
         authority: ctx.accounts.blacklister.key(),

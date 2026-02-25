@@ -151,7 +151,8 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
 
     // 3. Initialize transfer hook (if enabled)
     if params.enable_transfer_hook {
-        let hook_program_id = params.transfer_hook_program_id.unwrap();
+        let hook_program_id = params.transfer_hook_program_id
+            .ok_or(SssError::ComplianceNotEnabled)?;
         invoke(
             &transfer_hook_instruction::initialize(
                 &TOKEN_2022_PROGRAM_ID,

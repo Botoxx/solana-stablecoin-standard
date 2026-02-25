@@ -36,7 +36,7 @@ pub struct Seize<'info> {
     #[account(mut)]
     pub source_token_account: AccountInfo<'info>,
 
-    /// CHECK: Treasury token account. Validated by Token-2022 CPI.
+    /// CHECK: Treasury token account. Owner validated against config.treasury. Mint validated by Token-2022 CPI.
     #[account(mut)]
     pub treasury_token_account: AccountInfo<'info>,
 
@@ -56,6 +56,15 @@ pub fn handler(ctx: Context<Seize>, amount: u64) -> Result<()> {
     let account_state = source_data[108];
     require!(account_state == 2, SssError::AccountNotFrozen);
     drop(source_data);
+
+    // Validate treasury token account owner matches config.treasury
+    // Token-2022 account layout: mint(32) + owner(32) at offset 32
+    let treasury_data = ctx.accounts.treasury_token_account.try_borrow_data()?;
+    require!(treasury_data.len() >= 64, SssError::InvalidTreasury);
+    let treasury_owner = Pubkey::try_from(&treasury_data[32..64])
+        .map_err(|_| SssError::InvalidTreasury)?;
+    require!(treasury_owner == ctx.accounts.config.treasury, SssError::InvalidTreasury);
+    drop(treasury_data);
 
     let mint_key = ctx.accounts.config.mint;
     let decimals = ctx.accounts.config.decimals;

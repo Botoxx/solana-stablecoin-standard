@@ -61,7 +61,7 @@ pub mod transfer_hook {
         let config_pda = ctx.accounts.config.key();
 
         // Define the extra account metas for the transfer hook
-        let extra_metas = get_extra_account_metas(sss_token_program_id, config_pda);
+        let extra_metas = get_extra_account_metas(sss_token_program_id, config_pda)?;
 
         let account_size =
             ExtraAccountMetaList::size_of(extra_metas.len()).map_err(|_| TransferHookError::InvalidExtraAccountMetas)?;
@@ -199,12 +199,14 @@ fn check_blacklist(
 fn get_extra_account_metas(
     sss_token_program_id: Pubkey,
     config_pda: Pubkey,
-) -> Vec<ExtraAccountMeta> {
-    vec![
+) -> Result<Vec<ExtraAccountMeta>> {
+    Ok(vec![
         // Index 5: sss-token program ID (for external PDA derivation)
-        ExtraAccountMeta::new_with_pubkey(&sss_token_program_id, false, false).unwrap(),
+        ExtraAccountMeta::new_with_pubkey(&sss_token_program_id, false, false)
+            .map_err(|_| TransferHookError::InvalidExtraAccountMetas)?,
         // Index 6: StablecoinConfig PDA (read paused flag)
-        ExtraAccountMeta::new_with_pubkey(&config_pda, false, false).unwrap(),
+        ExtraAccountMeta::new_with_pubkey(&config_pda, false, false)
+            .map_err(|_| TransferHookError::InvalidExtraAccountMetas)?,
         // Index 7: Source blacklist entry — external PDA from sss-token
         // Seeds: ["blacklist", config, source_owner]
         // source_owner is at account index 3 (owner/delegate/authority in transfer)
@@ -220,7 +222,7 @@ fn get_extra_account_metas(
             false, // is_signer
             false, // is_writable
         )
-        .unwrap(),
+        .map_err(|_| TransferHookError::InvalidExtraAccountMetas)?,
         // Index 8: Dest blacklist entry — external PDA from sss-token
         // Seeds: ["blacklist", config, dest_owner]
         // dest_owner is extracted from the destination token account (index 2)
@@ -241,8 +243,8 @@ fn get_extra_account_metas(
             false,
             false,
         )
-        .unwrap(),
-    ]
+        .map_err(|_| TransferHookError::InvalidExtraAccountMetas)?,
+    ])
 }
 
 #[derive(Accounts)]

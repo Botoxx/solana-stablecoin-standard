@@ -132,13 +132,13 @@ Every state-changing instruction emits an Anchor event. Events are the primary a
 | Event | Key Fields | Compliance Relevance |
 |-------|-----------|---------------------|
 | InitializeEvent | authority, mint, extension flags, timestamp | Token creation record |
-| MintEvent | minter, recipient, amount, remaining_quota, timestamp | Issuance tracking |
-| BurnEvent | burner, amount, timestamp | Redemption tracking |
+| MintEvent | authority, minter, recipient, amount, remaining_quota, timestamp | Issuance tracking |
+| BurnEvent | authority, burner, amount, timestamp | Redemption tracking |
 | FreezeEvent | authority, account, timestamp | Account restriction |
 | ThawEvent | authority, account, timestamp | Account unrestriction |
 | PauseEvent | authority, timestamp | System-wide halt |
 | UnpauseEvent | authority, timestamp | System resumption |
-| MinterUpdatedEvent | authority, minter, quota, action, timestamp | Issuance limit changes |
+| MinterUpdatedEvent | authority, minter, quota_total, quota_remaining, action, timestamp | Issuance limit changes |
 | RoleUpdatedEvent | authority, address, role, action, timestamp | Access control changes |
 | AuthorityProposedEvent | authority, proposed, timestamp | Authority transfer initiation |
 | AuthorityAcceptedEvent | old_authority, new_authority, timestamp | Authority transfer completion |

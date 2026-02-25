@@ -321,19 +321,19 @@ All state-changing instructions emit Anchor events for off-chain indexing:
 | Event | Emitted By | Key Fields |
 |-------|-----------|------------|
 | InitializeEvent | initialize | authority, mint, treasury, decimals, extension flags |
-| MintEvent | mint | minter, recipient, amount, remaining_quota |
-| BurnEvent | burn | burner, amount |
+| MintEvent | mint | authority, minter, recipient, amount, remaining_quota |
+| BurnEvent | burn | authority, burner, amount |
 | FreezeEvent | freeze_account | authority, account |
 | ThawEvent | thaw_account | authority, account |
 | PauseEvent | pause | authority |
 | UnpauseEvent | unpause | authority |
-| MinterUpdatedEvent | update_minter | minter, quota_total, action |
-| RoleUpdatedEvent | update_roles | address, role, action |
+| MinterUpdatedEvent | update_minter | authority, minter, quota_total, quota_remaining, action |
+| RoleUpdatedEvent | update_roles | authority, address, role, action |
 | AuthorityProposedEvent | propose_authority | authority, proposed |
 | AuthorityAcceptedEvent | accept_authority | old_authority, new_authority |
-| BlacklistAddEvent | add_to_blacklist | address, reason |
-| BlacklistRemoveEvent | remove_from_blacklist | address |
-| SeizeEvent | seize | source, treasury, amount |
+| BlacklistAddEvent | add_to_blacklist | authority, address, reason |
+| BlacklistRemoveEvent | remove_from_blacklist | authority, address |
+| SeizeEvent | seize | authority, source, treasury, amount |
 
 All events include a `timestamp` field (Unix timestamp from `Clock::get()`).
 

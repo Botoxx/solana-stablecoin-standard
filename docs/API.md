@@ -132,7 +132,7 @@ curl "http://localhost:3001/events?offset=100&limit=50"
 
 **Port:** 3002 (configurable via `PORT_MINT_BURN`)
 
-Coordinates mint and burn operations via a request queue. Requests are stored in PostgreSQL and processed by a background executor. Uses Redis for job queuing.
+Coordinates mint and burn operations via a request queue. Requests are stored in PostgreSQL and processed by a background executor that polls for pending requests.
 
 ### POST /mint
 
@@ -576,21 +576,17 @@ After 5 failed attempts, the delivery is marked as failed and the subscription i
                     | postgres |
                     +----+-----+
                          |
-         +---------------+---------------+
-         |               |               |
-    +----+----+    +-----+------+   +----+-----+
-    | indexer  |    | mint-burn  |   |compliance|
-    +----+----+    +-----+------+   +----+-----+
-         |               |               |
-         |          +----+----+          |
-         |          |  redis  |          |
-         |          +---------+          |
-         |                               |
-         +-------+-----------+-----------+
+         +-------+-------+-------+-------+
+         |       |               |       |
+    +----+----+  +-----+------+  +----+-----+
+    | indexer  |  | mint-burn  |  |compliance|
+    +----+----+  +------------+  +----+-----+
+         |                             |
+         +-------+-----------+---------+
                  |           |
             +----+----+ +---+----+
             | webhook | |  RPC   |
             +---------+ +--------+
 ```
 
-All services share the PostgreSQL database. Redis is used only by the mint-burn service for job queuing. The indexer connects directly to the Solana RPC node for log subscription.
+All services share the PostgreSQL database. The mint-burn service uses PostgreSQL polling for job processing. The indexer connects directly to the Solana RPC node for log subscription.

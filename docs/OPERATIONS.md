@@ -144,7 +144,8 @@ sss-token holders --config <CONFIG_PDA> --min-balance 100
 
 # Show recent on-chain events (audit log)
 sss-token audit-log --config <CONFIG_PDA>
-sss-token audit-log --config <CONFIG_PDA> --action mint --limit 50
+sss-token audit-log --config <CONFIG_PDA> --limit 50
+sss-token audit-log --config <CONFIG_PDA> --action mint  # filter by action type
 ```
 
 ### Compliance Operations (SSS-2)
@@ -181,7 +182,7 @@ sss-token seize \
 ### Prerequisites
 
 - Docker and Docker Compose
-- PostgreSQL 16+ and Redis 7+ (provided via Docker Compose)
+- PostgreSQL 16+ (provided via Docker Compose)
 - Solana RPC endpoint (localnet, devnet, or mainnet)
 
 ### Quick Start
@@ -215,7 +216,6 @@ docker compose logs -f compliance
 | Service | Port | Description |
 |---------|------|-------------|
 | PostgreSQL | 5432 | Shared database |
-| Redis | 6379 | Job queue (mint-burn) |
 | Indexer | 3001 | Event listener and query API |
 | Mint-Burn | 3002 | Mint/burn request coordination |
 | Compliance | 3003 | Blacklist management and screening |
@@ -235,9 +235,6 @@ POSTGRES_URL=postgresql://sss:sss@localhost:5432/sss
 POSTGRES_USER=sss
 POSTGRES_PASSWORD=sss
 POSTGRES_DB=sss
-
-# Redis
-REDIS_URL=redis://localhost:6379
 
 # Service ports (customize if needed)
 PORT_INDEXER=3001

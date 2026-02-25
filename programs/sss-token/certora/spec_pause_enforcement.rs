@@ -121,15 +121,15 @@ mod pause_enforcement {
     /// Rule 6: Pause requires paused == false (idempotency protection).
     ///
     /// Pre:  config.paused == true
-    /// Post: pause(any_args) reverts with SssError::AlreadyPaused
+    /// Post: pause(any_args) reverts with SssError::Paused
     ///
     /// On-chain enforcement:
-    ///   #[account(constraint = !config.paused @ SssError::AlreadyPaused)]
+    ///   #[account(constraint = !config.paused @ SssError::Paused)]
     ///   in Pause instruction accounts (pause.rs)
     #[test]
     fn pause_requires_not_paused() {
         let paused = true;
-        // Anchor constraint: !config.paused @ SssError::AlreadyPaused
+        // Anchor constraint: !config.paused @ SssError::Paused
         // If already paused, !true => false => error
         assert!(!(!paused), "Pause constraint evaluates to false when already paused");
     }

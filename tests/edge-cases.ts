@@ -484,6 +484,273 @@ describe("Edge Cases & Boundary Conditions", () => {
     expect(after).to.be.null;
   });
 
+  it("freeze_account fails — unauthorized (non-authority)", async () => {
+    await assertError(async () => {
+      await program.methods
+        .freezeAccount()
+        .accounts({
+          authority: otherUser.publicKey,
+          config: configPda,
+          mint: mint.publicKey,
+          tokenAccount: userATokenAccount,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([otherUser])
+        .rpc();
+    }, "Unauthorized");
+  });
+
+  it("thaw_account fails — unauthorized (non-authority)", async () => {
+    // Freeze first
+    await program.methods
+      .freezeAccount()
+      .accounts({
+        authority: authority.publicKey,
+        config: configPda,
+        mint: mint.publicKey,
+        tokenAccount: userATokenAccount,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([authority])
+      .rpc();
+
+    await assertError(async () => {
+      await program.methods
+        .thawAccount()
+        .accounts({
+          authority: otherUser.publicKey,
+          config: configPda,
+          mint: mint.publicKey,
+          tokenAccount: userATokenAccount,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([otherUser])
+        .rpc();
+    }, "Unauthorized");
+
+    // Thaw to clean up
+    await program.methods
+      .thawAccount()
+      .accounts({
+        authority: authority.publicKey,
+        config: configPda,
+        mint: mint.publicKey,
+        tokenAccount: userATokenAccount,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([authority])
+      .rpc();
+  });
+
+  it("pause fails — unauthorized (non-pauser)", async () => {
+    const [fakeRolePda] = getRolePda(
+      configPda,
+      RoleType.Pauser,
+      otherUser.publicKey
+    );
+    await assertError(async () => {
+      await program.methods
+        .pause()
+        .accounts({
+          pauser: otherUser.publicKey,
+          config: configPda,
+          roleAssignment: fakeRolePda,
+        })
+        .signers([otherUser])
+        .rpc();
+    });
+  });
+
+  it("unpause fails — unauthorized (non-pauser)", async () => {
+    // Pause first
+    const [pauserRolePda] = getRolePda(
+      configPda,
+      RoleType.Pauser,
+      pauserKeypair.publicKey
+    );
+    await program.methods
+      .pause()
+      .accounts({
+        pauser: pauserKeypair.publicKey,
+        config: configPda,
+        roleAssignment: pauserRolePda,
+      })
+      .signers([pauserKeypair])
+      .rpc();
+
+    const [fakeRolePda] = getRolePda(
+      configPda,
+      RoleType.Pauser,
+      otherUser.publicKey
+    );
+    await assertError(async () => {
+      await program.methods
+        .unpause()
+        .accounts({
+          pauser: otherUser.publicKey,
+          config: configPda,
+          roleAssignment: fakeRolePda,
+        })
+        .signers([otherUser])
+        .rpc();
+    });
+
+    // Unpause to clean up
+    await program.methods
+      .unpause()
+      .accounts({
+        pauser: pauserKeypair.publicKey,
+        config: configPda,
+        roleAssignment: pauserRolePda,
+      })
+      .signers([pauserKeypair])
+      .rpc();
+  });
+
+  it("update_minter fails — unauthorized (non-authority)", async () => {
+    const [minterPda] = getMinterPda(configPda, minterKeypair.publicKey);
+    await assertError(async () => {
+      await program.methods
+        .updateMinter(minterKeypair.publicKey, { updateQuota: { newQuota: ONE_TOKEN } })
+        .accounts({
+          authority: otherUser.publicKey,
+          config: configPda,
+          minterConfig: minterPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([otherUser])
+        .rpc();
+    }, "Unauthorized");
+  });
+
+  it("propose_authority fails — unauthorized (non-authority)", async () => {
+    await assertError(async () => {
+      await program.methods
+        .proposeAuthority(otherUser.publicKey)
+        .accounts({
+          authority: otherUser.publicKey,
+          config: configPda,
+        })
+        .signers([otherUser])
+        .rpc();
+    }, "Unauthorized");
+  });
+
+  it("seize fails — wrong treasury token account", async () => {
+    const seizerKeypair = Keypair.generate();
+    await airdropSol(connection, seizerKeypair.publicKey, 2);
+    await assignRole(program, authority, configPda, seizerKeypair.publicKey, RoleType.Seizer);
+
+    // Mint tokens to userA
+    await mintTokens(program, minterKeypair, configPda, mint.publicKey, userATokenAccount, ONE_TOKEN);
+
+    // Freeze userA
+    await program.methods
+      .freezeAccount()
+      .accounts({
+        authority: authority.publicKey,
+        config: configPda,
+        mint: mint.publicKey,
+        tokenAccount: userATokenAccount,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([authority])
+      .rpc();
+
+    // Create a wrong treasury token account (owned by otherUser, not authority)
+    const wrongTreasury = await createTokenAccount(connection, otherUser, mint.publicKey, otherUser.publicKey);
+
+    const [seizerRolePda] = getRolePda(configPda, RoleType.Seizer, seizerKeypair.publicKey);
+    await assertError(async () => {
+      await program.methods
+        .seize(ONE_TOKEN)
+        .accounts({
+          seizer: seizerKeypair.publicKey,
+          config: configPda,
+          roleAssignment: seizerRolePda,
+          mint: mint.publicKey,
+          sourceTokenAccount: userATokenAccount,
+          treasuryTokenAccount: wrongTreasury,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        })
+        .signers([seizerKeypair])
+        .rpc();
+    }, "InvalidTreasury");
+
+    // Thaw to clean up
+    await program.methods
+      .thawAccount()
+      .accounts({
+        authority: authority.publicKey,
+        config: configPda,
+        mint: mint.publicKey,
+        tokenAccount: userATokenAccount,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([authority])
+      .rpc();
+  });
+
+  it("defaultAccountFrozen — new token accounts start frozen", async () => {
+    const frozenAuthority = Keypair.generate();
+    await airdropSol(connection, frozenAuthority.publicKey, 10);
+
+    const result = await createStablecoin(program, hookProgram, frozenAuthority, {
+      defaultAccountFrozen: true,
+      enablePermanentDelegate: true,
+      enableTransferHook: true,
+      treasury: frozenAuthority.publicKey,
+    });
+
+    // Setup minter
+    const frozenMinter = Keypair.generate();
+    await airdropSol(connection, frozenMinter.publicKey, 2);
+    await addMinter(program, frozenAuthority, result.configPda, frozenMinter.publicKey, ONE_TOKEN.mul(new anchor.BN(100)));
+
+    // Create token account — should be frozen by default
+    const holder = Keypair.generate();
+    await airdropSol(connection, holder.publicKey, 2);
+    const holderAta = await createTokenAccount(connection, frozenAuthority, result.mint.publicKey, holder.publicKey);
+
+    // Mint to the frozen account should fail because the recipient's account is frozen
+    await assertError(async () => {
+      await mintTokens(
+        program,
+        frozenMinter,
+        result.configPda,
+        result.mint.publicKey,
+        holderAta,
+        ONE_TOKEN
+      );
+    });
+
+    // Thaw the account
+    await program.methods
+      .thawAccount()
+      .accounts({
+        authority: frozenAuthority.publicKey,
+        config: result.configPda,
+        mint: result.mint.publicKey,
+        tokenAccount: holderAta,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .signers([frozenAuthority])
+      .rpc();
+
+    // Now mint should succeed
+    await mintTokens(
+      program,
+      frozenMinter,
+      result.configPda,
+      result.mint.publicKey,
+      holderAta,
+      ONE_TOKEN
+    );
+
+    const balance = await getTokenBalance(connection, holderAta);
+    expect(balance.toString()).to.equal(ONE_TOKEN.toString());
+  });
+
   it("remove non-existent blacklist entry fails", async () => {
     const nonExistent = Keypair.generate();
     const [rolePda] = getRolePda(

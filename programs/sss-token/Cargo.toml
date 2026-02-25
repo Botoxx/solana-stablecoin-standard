@@ -22,3 +22,4 @@ spl-token-2022 = { version = "5", features = ["no-entrypoint"] }
 spl-transfer-hook-interface = "0.8"
 spl-tlv-account-resolution = "0.7"
 spl-token-metadata-interface = "0.5"
+solana-security-txt = "1.1.1"

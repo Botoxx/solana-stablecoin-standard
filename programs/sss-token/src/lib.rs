@@ -10,6 +10,20 @@ use instructions::*;
 
 declare_id!("Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1");
 
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "SSS Token",
+    project_url: "https://github.com/solanabr/solana-stablecoin-standard",
+    contacts: "link:https://github.com/solanabr/solana-stablecoin-standard/issues",
+    policy: "https://github.com/solanabr/solana-stablecoin-standard/blob/main/SECURITY.md",
+    preferred_languages: "en,pt",
+    source_code: "https://github.com/solanabr/solana-stablecoin-standard",
+    auditors: "None"
+}
+
 #[program]
 pub mod sss_token {
     use super::*;

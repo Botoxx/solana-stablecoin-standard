@@ -11,6 +11,20 @@ use error::TransferHookError;
 
 declare_id!("7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj");
 
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "SSS Transfer Hook",
+    project_url: "https://github.com/solanabr/solana-stablecoin-standard",
+    contacts: "link:https://github.com/solanabr/solana-stablecoin-standard/issues",
+    policy: "https://github.com/solanabr/solana-stablecoin-standard/blob/main/SECURITY.md",
+    preferred_languages: "en,pt",
+    source_code: "https://github.com/solanabr/solana-stablecoin-standard",
+    auditors: "None"
+}
+
 /// Anchor discriminator for StablecoinConfig: sha256("account:StablecoinConfig")[..8]
 const CONFIG_DISCRIMINATOR: [u8; 8] = [127, 25, 244, 213, 1, 192, 101, 6];
 

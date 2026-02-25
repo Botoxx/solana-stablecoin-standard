@@ -1,12 +1,32 @@
 import { Pool } from "pg";
 import { Logger } from "pino";
+import * as dns from "dns/promises";
 import { SssEvent, WebhookSubscription } from "../../shared/types";
+import { isPrivateIp } from "../../shared/validation";
 import * as crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 
 const MAX_RETRIES = 5;
 // Backoff schedule per API.md: immediate, 30s, 2m, 10m, 1h
 const BACKOFF_DELAYS_MS = [0, 30_000, 120_000, 600_000, 3_600_000];
+
+/**
+ * Re-validate the webhook URL's resolved IP at dispatch time to prevent DNS
+ * rebinding attacks. The URL was validated at registration time, but the domain
+ * could be rebound to a private IP (e.g., 169.254.169.254 for cloud metadata)
+ * between registration and delivery.
+ */
+async function checkDnsRebinding(urlStr: string): Promise<boolean> {
+  try {
+    const hostname = new URL(urlStr).hostname;
+    // Skip for IP literals — already checked at registration
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
+    const addresses = await dns.resolve4(hostname);
+    return addresses.some(isPrivateIp);
+  } catch {
+    return false; // DNS failure — let fetch() handle it
+  }
+}
 
 export async function dispatchEvent(
   pool: Pool,
@@ -17,13 +37,24 @@ export async function dispatchEvent(
     `SELECT id, url, events, secret, active FROM webhook_subscriptions WHERE active = true`
   );
 
-  for (const sub of result.rows) {
+  const eligible = result.rows.filter((sub: any) => {
     const subscribedEvents = sub.events as string[];
-    if (subscribedEvents.length > 0 && !subscribedEvents.includes(event.name)) {
-      continue;
-    }
+    return subscribedEvents.length === 0 || subscribedEvents.includes(event.name);
+  });
 
-    await deliverWithRetry(pool, sub, event, logger);
+  // Dispatch to all subscribers in parallel — one dead subscriber must not
+  // block delivery to others
+  const results = await Promise.allSettled(
+    eligible.map((sub: any) => deliverWithRetry(pool, sub, event, logger))
+  );
+
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === "rejected") {
+      logger.error(
+        { subId: eligible[i].id, err: (results[i] as PromiseRejectedResult).reason },
+        "Webhook delivery promise rejected"
+      );
+    }
   }
 }
 
@@ -34,6 +65,12 @@ async function deliverWithRetry(
   logger: Logger
 ): Promise<void> {
   const deliveryId = uuidv4();
+
+  // Re-check DNS at dispatch time to block DNS rebinding attacks (SSRF)
+  if (await checkDnsRebinding(sub.url)) {
+    logger.warn({ subId: sub.id, url: sub.url }, "DNS rebinding detected — skipping delivery");
+    return;
+  }
 
   const payload = JSON.stringify({
     id: deliveryId,
@@ -92,8 +129,12 @@ async function deliverWithRetry(
     { subId: sub.id, event: event.name, deliveryId },
     "Webhook delivery exhausted retries, deactivating subscription"
   );
-  await pool.query(
-    `UPDATE webhook_subscriptions SET active = false WHERE id = $1`,
-    [sub.id]
-  );
+  try {
+    await pool.query(
+      `UPDATE webhook_subscriptions SET active = false WHERE id = $1`,
+      [sub.id]
+    );
+  } catch (dbErr) {
+    logger.error({ subId: sub.id, dbErr }, "Failed to deactivate subscription after retry exhaustion");
+  }
 }

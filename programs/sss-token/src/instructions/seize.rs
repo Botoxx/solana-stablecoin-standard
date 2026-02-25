@@ -8,6 +8,12 @@ use crate::events::SeizeEvent;
 use crate::instructions::initialize::TOKEN_2022_PROGRAM_ID;
 use crate::state::{RoleAssignment, RoleType, StablecoinConfig};
 
+/// Seize tokens from a frozen account into the treasury via burn+mint.
+///
+/// **Design note:** Seize intentionally has NO pause check. The pause mechanism
+/// halts user-initiated transfers, but compliance seizure must remain operational
+/// during emergencies — this is a GENIUS Act requirement ("block, freeze, and
+/// reject" must work at all times, including during system pause).
 #[derive(Accounts)]
 pub struct Seize<'info> {
     pub seizer: Signer<'info>,
@@ -33,8 +39,12 @@ pub struct Seize<'info> {
     )]
     pub mint: AccountInfo<'info>,
 
-    /// CHECK: Source token account to seize from — must be frozen. Validated by Token-2022 CPI.
-    #[account(mut)]
+    /// CHECK: Source token account to seize from — must be frozen and owned by Token-2022.
+    /// Mint and frozen state validated manually from account data before CPI.
+    #[account(
+        mut,
+        constraint = *source_token_account.owner == TOKEN_2022_PROGRAM_ID @ SssError::InvalidMint,
+    )]
     pub source_token_account: AccountInfo<'info>,
 
     /// CHECK: Treasury token account. Owner validated against config.treasury. Mint validated by Token-2022 CPI.

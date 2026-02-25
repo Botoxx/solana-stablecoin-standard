@@ -2,6 +2,15 @@ import { SssEvent } from "../../shared/types";
 import * as crypto from "crypto";
 import { PublicKey } from "@solana/web3.js";
 
+// Lazy logger — use pino if available (production), fall back to console (tests)
+let logger: { warn: (obj: any, msg?: string) => void };
+try {
+  const { createLogger } = require("../../shared/logger");
+  logger = createLogger("parser");
+} catch {
+  logger = { warn: (obj: any, msg?: string) => console.warn("[parser]", msg ?? "", obj) };
+}
+
 const EVENT_NAMES = [
   "InitializeEvent",
   "MintEvent",
@@ -221,7 +230,7 @@ export function parseTransactionLogs(
       const { authority, timestamp, data } = decoder(reader);
       events.push({ name, authority, timestamp: timestamp * 1000, signature, slot, data });
     } catch (err) {
-      console.warn(`[parser] Failed to parse event from tx ${signature}: ${err}`);
+      logger.warn({ err, signature }, "Failed to parse event from transaction");
     }
   }
 

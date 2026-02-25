@@ -22,11 +22,13 @@ export function registerHolders(program: Command) {
         const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const config = await stable.getConfig();
 
+        // Filter by mint field at offset 0 only — Token-2022 accounts with
+        // extensions (transfer hook, permanent delegate) are larger than 165
+        // bytes, so a dataSize filter would miss all SSS-2 token accounts.
         const accounts = await connection.getParsedProgramAccounts(
           TOKEN_2022_PROGRAM_ID,
           {
             filters: [
-              { dataSize: 165 },
               { memcmp: { offset: 0, bytes: stable.mintAddress.toBase58() } },
             ],
           }

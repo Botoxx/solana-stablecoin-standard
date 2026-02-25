@@ -253,7 +253,6 @@ export class SolanaStablecoin {
 
   async pause(pauser?: Keypair): Promise<TransactionSignature> {
     const signer = pauser ?? this._authority;
-    const [rolePda] = getRolePda(this.configPda, RoleType.Pauser, signer.publicKey);
     return this.program.methods
       .pause()
       .accounts({ pauser: signer.publicKey } as any)
@@ -263,7 +262,6 @@ export class SolanaStablecoin {
 
   async unpause(pauser?: Keypair): Promise<TransactionSignature> {
     const signer = pauser ?? this._authority;
-    const [rolePda] = getRolePda(this.configPda, RoleType.Pauser, signer.publicKey);
     return this.program.methods
       .unpause()
       .accounts({ pauser: signer.publicKey } as any)
@@ -357,7 +355,7 @@ export class SolanaStablecoin {
   ): Promise<TransactionSignature> {
     const [minterPda] = getMinterPda(this.configPda, address);
     return this.program.methods
-      .updateMinter(address, { updateQuota: { quota: newQuota } })
+      .updateMinter(address, { updateQuota: { newQuota } })
       .accounts({
         authority: this._authority.publicKey,
         minterConfig: minterPda,
@@ -377,11 +375,13 @@ export class SolanaStablecoin {
   }
 
   async acceptAuthority(newAuthority: Keypair): Promise<TransactionSignature> {
-    return this.program.methods
+    const sig = await this.program.methods
       .acceptAuthority()
       .accounts({ newAuthority: newAuthority.publicKey } as any)
       .signers([newAuthority])
       .rpc();
+    this._authority = newAuthority;
+    return sig;
   }
 
   // --- Queries ---

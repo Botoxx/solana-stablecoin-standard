@@ -138,10 +138,20 @@ export async function processPendingRequests(
     logger.info({ id: request.id, signature }, "Request completed");
   } catch (err: any) {
     if (onChainSuccess) {
-      // On-chain tx succeeded but DB update failed — do NOT mark as failed
+      // On-chain tx succeeded but DB status update failed — persist the
+      // signature so operators can reconcile, and mark with a distinct error
+      // so this request doesn't stay in 'processing' forever.
+      await pool.query(
+        `UPDATE mint_burn_requests
+         SET signature = $1, error = 'DB_UPDATE_FAILED_AFTER_ONCHAIN_SUCCESS', updated_at = NOW()
+         WHERE id = $2`,
+        [signature, request.id]
+      ).catch((retryErr) => {
+        logger.error({ id: request.id, retryErr }, "Failed even to store signature for reconciliation");
+      });
       logger.error(
         { id: request.id, signature, err },
-        "CRITICAL: On-chain tx succeeded but DB update failed. Manual reconciliation required."
+        "CRITICAL: On-chain tx succeeded but DB update failed. Signature persisted for reconciliation."
       );
       return;
     }
@@ -154,6 +164,25 @@ export async function processPendingRequests(
       logger.error({ id: request.id, dbErr }, "Failed to update request status");
     });
     logger.error({ id: request.id, err }, "Request failed");
+  }
+}
+
+async function reconcileStaleRequests(pool: Pool, logger: Logger): Promise<void> {
+  // On startup, flag requests stuck in 'processing' for >10 minutes as needing
+  // manual reconciliation. These likely had the process killed mid-execution.
+  const staleMinutes = 10;
+  const result = await pool.query(
+    `UPDATE mint_burn_requests
+     SET error = 'STALE_PROCESSING_ON_STARTUP', updated_at = NOW()
+     WHERE status = 'processing'
+       AND updated_at < NOW() - INTERVAL '${staleMinutes} minutes'
+     RETURNING id, signature`
+  );
+  if (result.rows.length > 0) {
+    logger.warn(
+      { count: result.rows.length, ids: result.rows.map((r: any) => r.id) },
+      `Found ${result.rows.length} stale processing request(s) — flagged for reconciliation`
+    );
   }
 }
 
@@ -177,6 +206,11 @@ export function startExecutor(
     { authority: authority.publicKey.toBase58(), programId: programIdStr },
     "Executor initialized"
   );
+
+  // Check for stale processing requests from previous runs
+  reconcileStaleRequests(pool, logger).catch((err) => {
+    logger.error({ err }, "Failed to reconcile stale requests on startup");
+  });
 
   const timer = setInterval(async () => {
     try {

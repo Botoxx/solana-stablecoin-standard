@@ -64,7 +64,7 @@ export function registerAuditLog(program: Command) {
               }
             }
           } catch {
-            // Failed to parse transaction, use default
+            action = "unknown (parse error)";
           }
 
           if (opts.action && action !== opts.action) continue;

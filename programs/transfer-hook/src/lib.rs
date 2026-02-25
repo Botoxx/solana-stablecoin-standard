@@ -76,6 +76,14 @@ pub mod transfer_hook {
         ctx: Context<InitializeExtraAccountMetaList>,
         sss_token_program_id: Pubkey,
     ) -> Result<()> {
+        // Validate config account is owned by the declared sss-token program,
+        // preventing frontrun attacks where an attacker passes a fake program ID
+        // with a config they control (which would disable blacklist enforcement).
+        require!(
+            *ctx.accounts.config.owner == sss_token_program_id,
+            TransferHookError::InvalidConfig
+        );
+
         let config_pda = ctx.accounts.config.key();
 
         // Define the extra account metas for the transfer hook
@@ -124,13 +132,16 @@ pub mod transfer_hook {
             TransferHookError::InvalidConfig
         );
 
-        // 3. Check if system is paused
+        // 3. Check if system is paused — fail closed: reject transfer if config
+        //    cannot be parsed (malformed data must not allow transfers through)
         let config_data = ctx.accounts.config.try_borrow_data()?;
-        if config_data.len() >= 8 && config_data[..8] == CONFIG_DISCRIMINATOR {
-            if let Some(paused_offset) = get_paused_offset(&config_data) {
-                require!(config_data[paused_offset] == 0, TransferHookError::Paused);
-            }
-        }
+        require!(
+            config_data.len() >= 8 && config_data[..8] == CONFIG_DISCRIMINATOR,
+            TransferHookError::InvalidConfig
+        );
+        let paused_offset = get_paused_offset(&config_data)
+            .ok_or(error!(TransferHookError::InvalidConfig))?;
+        require!(config_data[paused_offset] == 0, TransferHookError::Paused);
         drop(config_data);
 
         // 4. Check source blacklist
@@ -189,28 +200,32 @@ fn check_blacklist(
     sss_program_id: &Pubkey,
     err: TransferHookError,
 ) -> Result<()> {
-    // If the account doesn't exist or has no data, the address is not blacklisted
+    // If the account has no data, the blacklist PDA was never created = not blacklisted
     if account.data_is_empty() {
         return Ok(());
     }
 
-    // Verify owner is the sss-token program
-    if account.owner != sss_program_id {
-        return Ok(());
-    }
+    // Fail closed: if the account exists but can't be validated as a legitimate
+    // blacklist entry, reject the transfer. Only `data_is_empty()` (PDA never
+    // created) is a valid "not blacklisted" signal. Wrong owner, bad discriminator,
+    // or truncated data means the blacklist state is indeterminate — block rather
+    // than allow a potentially sanctioned transfer through.
+    require!(
+        account.owner == sss_program_id,
+        TransferHookError::InvalidBlacklist
+    );
 
     let data = account.try_borrow_data()?;
+    require!(
+        data.len() >= 8 && data[..8] == BLACKLIST_DISCRIMINATOR,
+        TransferHookError::InvalidBlacklist
+    );
 
-    // Verify it's a BlacklistEntry by checking discriminator
-    if data.len() < 8 || data[..8] != BLACKLIST_DISCRIMINATOR {
-        return Ok(());
-    }
+    let active_offset = get_blacklist_active_offset(&data)
+        .ok_or(error!(TransferHookError::InvalidBlacklist))?;
 
-    // Dynamically find the `active` field offset (String reason has variable length)
-    if let Some(active_offset) = get_blacklist_active_offset(&data) {
-        if data[active_offset] == 1 {
-            return Err(err.into());
-        }
+    if data[active_offset] == 1 {
+        return Err(err.into());
     }
 
     Ok(())
@@ -229,7 +244,12 @@ fn get_extra_account_metas(
             .map_err(|_| TransferHookError::InvalidExtraAccountMetas)?,
         // Index 7: Source blacklist entry — external PDA from sss-token
         // Seeds: ["blacklist", config, source_owner]
-        // source_owner is at account index 3 (owner/delegate/authority in transfer)
+        // source_owner is extracted from the source token account (index 0)
+        // at offset 32 (after the 32-byte mint pubkey in Token-2022 layout).
+        // We read from account data rather than using AccountKey{index:3}
+        // because index 3 is the signer/delegate — not necessarily the token
+        // account owner. A delegate transfer would check the delegate's
+        // blacklist status instead of the actual token holder's.
         ExtraAccountMeta::new_external_pda_with_seeds(
             5, // sss-token program index
             &[
@@ -237,7 +257,11 @@ fn get_extra_account_metas(
                     bytes: b"blacklist".to_vec(),
                 },
                 Seed::AccountKey { index: 6 }, // config PDA
-                Seed::AccountKey { index: 3 }, // source owner/authority
+                Seed::AccountData {
+                    account_index: 0,
+                    data_index: 32,
+                    length: 32,
+                }, // source owner from token account
             ],
             false, // is_signer
             false, // is_writable
@@ -281,10 +305,15 @@ pub struct InitializeExtraAccountMetaList<'info> {
     )]
     pub extra_account_meta_list: AccountInfo<'info>,
 
-    /// CHECK: The mint account
+    /// CHECK: The mint account — must be owned by Token-2022
+    #[account(
+        constraint = *mint.owner == spl_token_2022::ID @ TransferHookError::InvalidConfig,
+    )]
     pub mint: AccountInfo<'info>,
 
-    /// CHECK: StablecoinConfig from sss-token program
+    /// CHECK: StablecoinConfig from sss-token program — owner must match the
+    /// sss_token_program_id passed as instruction data, preventing an attacker
+    /// from frontrunning with a fake config pointing to a malicious program.
     pub config: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,

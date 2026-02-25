@@ -1,4 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
+import type { RoleTypeValue } from "./types";
 
 export const SSS_TOKEN_PROGRAM_ID = new PublicKey(
   "Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1"
@@ -33,7 +34,7 @@ export function getMinterPda(
 
 export function getRolePda(
   config: PublicKey,
-  roleType: number,
+  roleType: RoleTypeValue,
   address: PublicKey
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(

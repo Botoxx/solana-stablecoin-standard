@@ -11,11 +11,11 @@ export interface ScreeningProvider {
 }
 
 export class OFACScreeningProvider implements ScreeningProvider {
-  private isStub: boolean;
+  private apiUrl: string | undefined;
 
   constructor() {
-    this.isStub = !process.env.OFAC_API_URL;
-    if (this.isStub) {
+    this.apiUrl = process.env.OFAC_API_URL;
+    if (!this.apiUrl) {
       console.warn(
         "[COMPLIANCE WARNING] OFACScreeningProvider is in STUB mode — all addresses pass screening. " +
         "Set OFAC_API_URL env var for real OFAC SDN screening."
@@ -24,13 +24,33 @@ export class OFACScreeningProvider implements ScreeningProvider {
   }
 
   async screen(address: string): Promise<ScreeningResult> {
-    // Stub implementation — integration point for OFAC SDN list
-    // In production, set OFAC_API_URL to enable real screening
-    return {
-      address,
-      flagged: false,
-      source: this.isStub ? "OFAC_SDN_STUB" : "OFAC_SDN",
-    };
+    if (!this.apiUrl) {
+      // Stub mode — no API configured, return unflagged with explicit stub label
+      return { address, flagged: false, source: "OFAC_SDN_STUB" };
+    }
+
+    // Real OFAC API call. If the integration is not yet implemented, fail loud
+    // rather than returning a false "clean" result that creates a fraudulent
+    // compliance record in the audit log.
+    try {
+      const response = await fetch(`${this.apiUrl}/screen?address=${encodeURIComponent(address)}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        throw new Error(`OFAC API returned ${response.status}`);
+      }
+      const data = await response.json() as { flagged?: boolean; matchType?: string };
+      return {
+        address,
+        flagged: !!data.flagged,
+        source: "OFAC_SDN",
+        matchType: data.matchType,
+      };
+    } catch (err: any) {
+      // Fail closed: if the OFAC API is unreachable, do NOT return "clean".
+      // Throw so the caller can decide whether to block or retry.
+      throw new Error(`OFAC screening failed for ${address}: ${err.message}`);
+    }
   }
 }
 

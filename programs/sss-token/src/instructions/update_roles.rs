@@ -66,7 +66,8 @@ pub fn handler(
                 role_assignment.config == ctx.accounts.config.key(),
                 SssError::InvalidRole
             );
-            // Close the account — return lamports to authority
+            // Close the account — return lamports to authority and zero all data
+            // to prevent stale fields from interfering with future re-assign
             let dest = ctx.accounts.authority.to_account_info();
             let source = role_assignment.to_account_info();
             let dest_lamports = dest.lamports();
@@ -74,7 +75,8 @@ pub fn handler(
                 .checked_add(source.lamports())
                 .ok_or(SssError::Overflow)?;
             **source.try_borrow_mut_lamports()? = 0;
-            source.try_borrow_mut_data()?[..8].copy_from_slice(&[0u8; 8]);
+            let mut data = source.try_borrow_mut_data()?;
+            data.fill(0);
             "revoke"
         }
     };

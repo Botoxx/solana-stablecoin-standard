@@ -12,7 +12,7 @@ const logger = createLogger("mint-burn");
 const startTime = Date.now();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));
 
 app.get("/health", (_req, res) => {
   const health: HealthResponse = {
@@ -42,7 +42,7 @@ const server = app.listen(config.port, () => {
 process.on("SIGTERM", async () => {
   logger.info("Shutting down...");
   if (stopExecutor) stopExecutor();
-  server.close();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
   await closePool();
   process.exit(0);
 });

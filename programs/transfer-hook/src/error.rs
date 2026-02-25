@@ -14,4 +14,6 @@ pub enum TransferHookError {
     InvalidExtraAccountMetas,
     #[msg("Invalid StablecoinConfig account")]
     InvalidConfig,
+    #[msg("Invalid BlacklistEntry account — cannot verify blacklist status")]
+    InvalidBlacklist,
 }

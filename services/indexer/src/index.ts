@@ -15,7 +15,7 @@ const startTime = Date.now();
 const webhookUrl = process.env.WEBHOOK_URL || "http://webhook:3004";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));
 
 app.get("/health", (_req, res) => {
   const health: HealthResponse = {
@@ -45,9 +45,14 @@ app.get("/events", authMiddleware, async (req, res) => {
 
 async function dispatchToWebhook(event: SssEvent): Promise<void> {
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const apiSecret = process.env.API_SECRET;
+    if (apiSecret) {
+      headers["Authorization"] = `Bearer ${apiSecret}`;
+    }
     const response = await fetch(`${webhookUrl}/dispatch`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(event),
       signal: AbortSignal.timeout(5000),
     });
@@ -60,43 +65,70 @@ async function dispatchToWebhook(event: SssEvent): Promise<void> {
 }
 
 async function startSubscription() {
-  const connection = new Connection(config.rpcUrl, "confirmed");
   const pool = getPool(config.postgresUrl);
-
   initEventDiscriminators();
 
   const programId = config.programId;
-  logger.info({ programId }, "Subscribing to program logs");
-
   const { PublicKey: PK } = await import("@solana/web3.js");
-  connection.onLogs(
-    new PK(programId),
-    async (logInfo) => {
-      try {
+
+  function subscribe() {
+    const connection = new Connection(config.rpcUrl, "confirmed");
+    logger.info({ programId }, "Subscribing to program logs");
+
+    const subId = connection.onLogs(
+      new PK(programId),
+      async (logInfo) => {
         const events = parseTransactionLogs(
           logInfo.signature,
           0,
           logInfo.logs
         );
+        // Process each event independently — a failure on one event must not
+        // prevent processing of subsequent events in the same transaction
         for (const event of events) {
-          await storeEvent(pool, event);
-          logger.info({ event: event.name, sig: logInfo.signature }, "Indexed event");
+          // Skip dispatching Unknown events to avoid polluting subscriber feeds
+          if (event.name === "Unknown") {
+            logger.warn({ sig: logInfo.signature, disc: event.data?.discriminator }, "Unknown event discriminator");
+            continue;
+          }
+          try {
+            await storeEvent(pool, event);
+            logger.info({ event: event.name, sig: logInfo.signature }, "Indexed event");
 
-          await logAudit(pool, {
-            action: event.name,
-            operator: event.authority || "system",
-            details: event.data,
-            signature: event.signature,
-          });
+            await logAudit(pool, {
+              action: event.name,
+              operator: event.authority || "system",
+              details: event.data,
+              signature: event.signature,
+            });
 
-          await dispatchToWebhook(event);
+            await dispatchToWebhook(event);
+          } catch (err) {
+            logger.error(
+              { err, sig: logInfo.signature, event: event.name },
+              "Failed to process event"
+            );
+          }
         }
-      } catch (err) {
-        logger.error({ err, sig: logInfo.signature }, "Failed to process log");
+      },
+      "confirmed"
+    );
+
+    // Reconnect on WebSocket close — onLogs uses a WebSocket subscription
+    // that can drop silently. Poll to detect stale connections.
+    const healthCheck = setInterval(async () => {
+      try {
+        await connection.getSlot();
+      } catch {
+        logger.warn("WebSocket health check failed — reconnecting");
+        clearInterval(healthCheck);
+        try { connection.removeOnLogsListener(subId); } catch { /* already dead */ }
+        setTimeout(subscribe, 3000);
       }
-    },
-    "confirmed"
-  );
+    }, 30_000);
+  }
+
+  subscribe();
 }
 
 const server = app.listen(config.port, () => {
@@ -109,7 +141,7 @@ const server = app.listen(config.port, () => {
 
 process.on("SIGTERM", async () => {
   logger.info("Shutting down...");
-  server.close();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
   await closePool();
   process.exit(0);
 });

@@ -31,11 +31,15 @@ describe("OFACScreeningProvider", () => {
     expect(result.source).to.equal("OFAC_SDN_STUB");
   });
 
-  it("labels source as OFAC_SDN when API URL is set", async () => {
+  it("throws when OFAC_API_URL is set but unreachable (fail-closed)", async () => {
     process.env.OFAC_API_URL = "https://ofac.example.com/api";
     const provider = new OFACScreeningProvider();
-    const result = await provider.screen("test-address");
-    expect(result.source).to.equal("OFAC_SDN");
+    try {
+      await provider.screen("test-address");
+      expect.fail("should have thrown");
+    } catch (err: any) {
+      expect(err.message).to.include("OFAC screening failed");
+    }
   });
 });
 

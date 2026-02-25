@@ -99,7 +99,7 @@ export interface MinterState {
 
 export interface RoleState {
   config: PublicKey;
-  roleType: number;
+  roleType: RoleTypeValue;
   address: PublicKey;
   assignedBy: PublicKey;
   assignedAt: BN;

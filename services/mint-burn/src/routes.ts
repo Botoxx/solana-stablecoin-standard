@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Pool } from "pg";
 import { v4 as uuidv4 } from "uuid";
 import { MintBurnRequest } from "../../shared/types";
+import { logAudit } from "../../shared/audit";
 import { Logger } from "pino";
 
 export function createRoutes(pool: Pool, logger: Logger): Router {
@@ -20,6 +21,13 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [id, "mint", amount, recipient, configPda, "pending"]
       );
+
+      await logAudit(pool, {
+        action: "mint_request",
+        operator: "api",
+        target: recipient,
+        details: { amount, configPda, requestId: id },
+      });
 
       logger.info({ id, action: "mint", amount, recipient }, "Mint request queued");
       res.status(201).json({ id, status: "pending" });
@@ -42,6 +50,13 @@ export function createRoutes(pool: Pool, logger: Logger): Router {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [id, "burn", amount, tokenAccount, configPda, "pending"]
       );
+
+      await logAudit(pool, {
+        action: "burn_request",
+        operator: "api",
+        target: tokenAccount,
+        details: { amount, configPda, requestId: id },
+      });
 
       logger.info({ id, action: "burn", amount }, "Burn request queued");
       res.status(201).json({ id, status: "pending" });

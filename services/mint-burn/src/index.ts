@@ -30,7 +30,11 @@ let stopExecutor: (() => void) | null = null;
 
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port }, "Mint-burn service started");
-  stopExecutor = startExecutor(pool, logger);
+  if (process.env.AUTHORITY_KEYPAIR) {
+    stopExecutor = startExecutor(pool, logger, config.rpcUrl, config.programId);
+  } else {
+    logger.warn("AUTHORITY_KEYPAIR not set — executor disabled (queue-only mode)");
+  }
 });
 
 process.on("SIGTERM", async () => {

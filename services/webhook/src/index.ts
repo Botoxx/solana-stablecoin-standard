@@ -2,8 +2,9 @@ import express from "express";
 import { loadConfig } from "../../shared/config";
 import { createLogger } from "../../shared/logger";
 import { getPool, closePool } from "../../shared/db";
-import { HealthResponse } from "../../shared/types";
+import { HealthResponse, SssEvent } from "../../shared/types";
 import { createRoutes } from "./routes";
+import { dispatchEvent } from "./dispatcher";
 
 const config = loadConfig(3004);
 const logger = createLogger("webhook");
@@ -23,6 +24,22 @@ app.get("/health", (_req, res) => {
 });
 
 const pool = getPool(config.postgresUrl);
+
+// Internal endpoint called by indexer to dispatch events to webhook subscribers
+app.post("/dispatch", async (req, res) => {
+  try {
+    const event = req.body as SssEvent;
+    if (!event.name) {
+      return res.status(400).json({ error: "Missing event name" });
+    }
+    await dispatchEvent(pool, logger, event);
+    res.json({ dispatched: true, event: event.name });
+  } catch (err: any) {
+    logger.error({ err }, "Failed to dispatch event");
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use("/", createRoutes(pool, logger));
 
 const server = app.listen(config.port, () => {

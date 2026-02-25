@@ -1,9 +1,48 @@
 import { Pool } from "pg";
 import { Logger } from "pino";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Program, AnchorProvider, BN, Wallet, Idl } from "@coral-xyz/anchor";
+import {
+  TOKEN_2022_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
+import { logAudit } from "../../shared/audit";
+
+const CONFIG_SEED = Buffer.from("config");
+const MINTER_SEED = Buffer.from("minter");
+const ROLE_SEED = Buffer.from("role");
+
+function loadAuthorityKeypair(): Keypair {
+  const raw = process.env.AUTHORITY_KEYPAIR;
+  if (!raw) throw new Error("AUTHORITY_KEYPAIR env var required (JSON byte array)");
+  const secret = Uint8Array.from(JSON.parse(raw));
+  return Keypair.fromSecretKey(secret);
+}
+
+function deriveConfigPda(mint: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([CONFIG_SEED, mint.toBuffer()], programId);
+}
+
+function deriveMinterPda(config: PublicKey, minter: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [MINTER_SEED, config.toBuffer(), minter.toBuffer()],
+    programId
+  );
+}
+
+function deriveRolePda(config: PublicKey, roleType: number, address: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [ROLE_SEED, config.toBuffer(), Buffer.from([roleType]), address.toBuffer()],
+    programId
+  );
+}
 
 export async function processPendingRequests(
   pool: Pool,
-  logger: Logger
+  logger: Logger,
+  program: Program,
+  authority: Keypair
 ): Promise<void> {
   const result = await pool.query(
     `UPDATE mint_burn_requests
@@ -24,21 +63,64 @@ export async function processPendingRequests(
   logger.info({ id: request.id, action: request.action }, "Processing request");
 
   try {
-    // In production, this would use the SDK to execute the mint/burn
-    // For now, we mark as completed with a placeholder
-    // The actual execution would:
-    // 1. Load the stablecoin via SolanaStablecoin.load()
-    // 2. Call mintTokens() or burn() with the authority keypair
-    // 3. Record the transaction signature
+    const configPda = new PublicKey(request.config_pda);
+    const config = await (program.account as any)["stablecoinConfig"].fetch(configPda);
+    const mint = config.mint as PublicKey;
+    let signature: string;
+
+    if (request.action === "mint") {
+      const recipient = new PublicKey(request.recipient);
+      const recipientAta = getAssociatedTokenAddressSync(
+        mint, recipient, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID
+      );
+      const [minterPda] = deriveMinterPda(configPda, authority.publicKey, program.programId);
+      const [rolePda] = deriveRolePda(configPda, 0, authority.publicKey, program.programId);
+
+      signature = await program.methods
+        .mint(new BN(request.amount))
+        .accounts({
+          minter: authority.publicKey,
+          roleAssignment: rolePda,
+          minterConfig: minterPda,
+          mint,
+          recipientTokenAccount: recipientAta,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        } as any)
+        .signers([authority])
+        .rpc();
+    } else {
+      const tokenAccount = new PublicKey(request.token_account);
+      const [rolePda] = deriveRolePda(configPda, 1, authority.publicKey, program.programId);
+
+      signature = await program.methods
+        .burn(new BN(request.amount))
+        .accounts({
+          burner: authority.publicKey,
+          roleAssignment: rolePda,
+          mint,
+          burnerTokenAccount: tokenAccount,
+          tokenProgram: TOKEN_2022_PROGRAM_ID,
+        } as any)
+        .signers([authority])
+        .rpc();
+    }
 
     await pool.query(
       `UPDATE mint_burn_requests
        SET status = 'completed', signature = $1, updated_at = NOW()
        WHERE id = $2`,
-      [`placeholder_${request.id}`, request.id]
+      [signature, request.id]
     );
 
-    logger.info({ id: request.id }, "Request completed");
+    await logAudit(pool, {
+      action: request.action,
+      operator: authority.publicKey.toBase58(),
+      target: request.recipient || request.token_account,
+      details: { amount: request.amount, requestId: request.id },
+      signature,
+    });
+
+    logger.info({ id: request.id, signature }, "Request completed");
   } catch (err: any) {
     await pool.query(
       `UPDATE mint_burn_requests
@@ -50,10 +132,30 @@ export async function processPendingRequests(
   }
 }
 
-export function startExecutor(pool: Pool, logger: Logger, intervalMs = 5000) {
+export function startExecutor(
+  pool: Pool,
+  logger: Logger,
+  rpcUrl: string,
+  programIdStr: string,
+  intervalMs = 5000
+) {
+  const authority = loadAuthorityKeypair();
+  const connection = new Connection(rpcUrl, "confirmed");
+  const provider = new AnchorProvider(connection, new Wallet(authority), { commitment: "confirmed" });
+
+  // Load IDL at runtime — in production, bake this into the Docker image
+  const idl = require("../../shared/idl/sss_token.json");
+  const programId = new PublicKey(programIdStr);
+  const program = new Program(idl, provider);
+
+  logger.info(
+    { authority: authority.publicKey.toBase58(), programId: programIdStr },
+    "Executor initialized"
+  );
+
   const timer = setInterval(async () => {
     try {
-      await processPendingRequests(pool, logger);
+      await processPendingRequests(pool, logger, program, authority);
     } catch (err) {
       logger.error({ err }, "Executor error");
     }

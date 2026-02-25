@@ -3,13 +3,15 @@ import { Connection } from "@solana/web3.js";
 import { loadConfig } from "../../shared/config";
 import { createLogger } from "../../shared/logger";
 import { getPool, closePool } from "../../shared/db";
-import { HealthResponse } from "../../shared/types";
+import { logAudit } from "../../shared/audit";
+import { HealthResponse, SssEvent } from "../../shared/types";
 import { parseTransactionLogs, initEventDiscriminators } from "./parser";
 import { storeEvent } from "./store";
 
 const config = loadConfig(3001);
 const logger = createLogger("indexer");
 const startTime = Date.now();
+const webhookUrl = process.env.WEBHOOK_URL || "http://webhook:3004";
 
 const app = express();
 app.use(express.json());
@@ -40,6 +42,22 @@ app.get("/events", async (req, res) => {
   }
 });
 
+async function dispatchToWebhook(event: SssEvent): Promise<void> {
+  try {
+    const response = await fetch(`${webhookUrl}/dispatch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      logger.warn({ status: response.status, event: event.name }, "Webhook dispatch non-ok");
+    }
+  } catch (err) {
+    logger.warn({ err, event: event.name }, "Webhook dispatch failed (non-fatal)");
+  }
+}
+
 async function startSubscription() {
   const connection = new Connection(config.rpcUrl, "confirmed");
   const pool = getPool(config.postgresUrl);
@@ -49,8 +67,9 @@ async function startSubscription() {
   const programId = config.programId;
   logger.info({ programId }, "Subscribing to program logs");
 
+  const { PublicKey: PK } = await import("@solana/web3.js");
   connection.onLogs(
-    { mentions: [programId] },
+    new PK(programId),
     async (logInfo) => {
       try {
         const events = parseTransactionLogs(
@@ -61,6 +80,15 @@ async function startSubscription() {
         for (const event of events) {
           await storeEvent(pool, event);
           logger.info({ event: event.name, sig: logInfo.signature }, "Indexed event");
+
+          await logAudit(pool, {
+            action: event.name,
+            operator: event.authority || "system",
+            details: event.data,
+            signature: event.signature,
+          });
+
+          await dispatchToWebhook(event);
         }
       } catch (err) {
         logger.error({ err, sig: logInfo.signature }, "Failed to process log");

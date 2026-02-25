@@ -5,7 +5,7 @@ export function createLogger(service: string) {
     name: service,
     level: process.env.LOG_LEVEL || "info",
     formatters: {
-      level(label) {
+      level(label: string) {
         return { level: label };
       },
     },

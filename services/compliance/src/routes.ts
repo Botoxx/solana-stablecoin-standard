@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { Pool } from "pg";
 import { Logger } from "pino";
+import { logAudit } from "../../shared/audit";
 import { ScreeningProvider } from "./screening";
 
 export function createRoutes(
@@ -41,6 +42,13 @@ export function createRoutes(
         [address, reason, operator || "system"]
       );
 
+      await logAudit(pool, {
+        action: "blacklist_add",
+        operator: operator || "system",
+        target: address,
+        details: { reason },
+      });
+
       logger.info({ address, reason }, "Address blacklisted");
       res.status(201).json({ address, status: "blacklisted" });
     } catch (err: any) {
@@ -55,6 +63,13 @@ export function createRoutes(
         `UPDATE blacklist SET active = false WHERE address = $1`,
         [req.params.address]
       );
+
+      await logAudit(pool, {
+        action: "blacklist_remove",
+        operator: "system",
+        target: req.params.address,
+      });
+
       logger.info({ address: req.params.address }, "Address removed from blacklist");
       res.json({ address: req.params.address, status: "removed" });
     } catch (err: any) {
@@ -69,6 +84,14 @@ export function createRoutes(
       if (!address) return res.status(400).json({ error: "Missing address" });
 
       const result = await screener.screen(address);
+
+      await logAudit(pool, {
+        action: "screen",
+        operator: "system",
+        target: address,
+        details: { flagged: result.flagged, source: result.source },
+      });
+
       logger.info({ address, flagged: result.flagged }, "Address screened");
       res.json(result);
     } catch (err: any) {

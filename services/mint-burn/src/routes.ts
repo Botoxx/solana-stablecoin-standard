@@ -1,23 +1,10 @@
 import { Router } from "express";
 import { Pool } from "pg";
 import { v4 as uuidv4 } from "uuid";
-import { PublicKey } from "@solana/web3.js";
 import { MintBurnRequest } from "../../shared/types";
 import { logAudit } from "../../shared/audit";
 import { Logger } from "pino";
-
-const MAX_U64 = "18446744073709551615";
-
-function isValidPubkey(s: string): boolean {
-  try { new PublicKey(s); return true; } catch { return false; }
-}
-
-function isValidAmount(s: string): boolean {
-  if (!/^\d+$/.test(s)) return false;
-  if (s.length > MAX_U64.length) return false;
-  if (s.length === MAX_U64.length && s > MAX_U64) return false;
-  return BigInt(s) > 0n;
-}
+import { isValidPubkey, isValidAmount } from "../../shared/validation";
 
 export function createRoutes(pool: Pool, logger: Logger): Router {
   const router = Router();

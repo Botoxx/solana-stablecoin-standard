@@ -2,46 +2,7 @@ import { Router } from "express";
 import { Pool } from "pg";
 import { Logger } from "pino";
 import { v4 as uuidv4 } from "uuid";
-import * as net from "net";
-
-const BLOCKED_IP_RANGES = [
-  { start: "10.0.0.0", end: "10.255.255.255" },
-  { start: "172.16.0.0", end: "172.31.255.255" },
-  { start: "192.168.0.0", end: "192.168.255.255" },
-  { start: "169.254.0.0", end: "169.254.255.255" },
-  { start: "127.0.0.0", end: "127.255.255.255" },
-];
-
-function ipToNum(ip: string): number {
-  return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet), 0) >>> 0;
-}
-
-function isPrivateIp(ip: string): boolean {
-  if (!net.isIPv4(ip)) return false;
-  const num = ipToNum(ip);
-  return BLOCKED_IP_RANGES.some(
-    (r) => num >= ipToNum(r.start) && num <= ipToNum(r.end)
-  );
-}
-
-function isValidWebhookUrl(urlStr: string): { valid: boolean; reason?: string } {
-  let parsed: URL;
-  try {
-    parsed = new URL(urlStr);
-  } catch {
-    return { valid: false, reason: "Invalid URL format" };
-  }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    return { valid: false, reason: "Only http/https URLs are allowed" };
-  }
-  if (isPrivateIp(parsed.hostname)) {
-    return { valid: false, reason: "URLs targeting private/internal IP ranges are not allowed" };
-  }
-  if (parsed.hostname === "localhost" || parsed.hostname === "0.0.0.0") {
-    return { valid: false, reason: "URLs targeting localhost are not allowed" };
-  }
-  return { valid: true };
-}
+import { isValidWebhookUrl } from "../../shared/validation";
 
 export function createRoutes(pool: Pool, logger: Logger): Router {
   const router = Router();

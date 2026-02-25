@@ -16,7 +16,7 @@ const ROLE_SEED = Buffer.from("role");
 const ROLE_MINTER = 0;
 const ROLE_BURNER = 1;
 
-function loadAuthorityKeypair(): Keypair {
+export function loadAuthorityKeypair(): Keypair {
   const raw = process.env.AUTHORITY_KEYPAIR;
   if (!raw) throw new Error("AUTHORITY_KEYPAIR env var required (JSON byte array)");
   let parsed: number[];

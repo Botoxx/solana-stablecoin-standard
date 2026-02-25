@@ -751,6 +751,33 @@ describe("Edge Cases & Boundary Conditions", () => {
     expect(balance.toString()).to.equal(ONE_TOKEN.toString());
   });
 
+  it("update_roles Assign fails when role already assigned", async () => {
+    const target = Keypair.generate();
+    await airdropSol(connection, target.publicKey, 1);
+
+    // First assign succeeds
+    await assignRole(program, authority, configPda, target.publicKey, RoleType.Burner);
+
+    // Second assign to same address+role should fail
+    const [rolePda] = getRolePda(configPda, RoleType.Burner, target.publicKey);
+    await assertError(async () => {
+      await program.methods
+        .updateRoles(
+          target.publicKey,
+          { burner: {} } as any,
+          { assign: {} }
+        )
+        .accounts({
+          authority: authority.publicKey,
+          config: configPda,
+          roleAssignment: rolePda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+    }, "RoleAlreadyAssigned");
+  });
+
   it("remove non-existent blacklist entry fails", async () => {
     const nonExistent = Keypair.generate();
     const [rolePda] = getRolePda(

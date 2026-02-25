@@ -1,13 +1,9 @@
 import { Router } from "express";
 import { Pool } from "pg";
 import { Logger } from "pino";
-import { PublicKey } from "@solana/web3.js";
 import { logAudit } from "../../shared/audit";
 import { ScreeningProvider } from "./screening";
-
-function isValidPubkey(s: string): boolean {
-  try { new PublicKey(s); return true; } catch { return false; }
-}
+import { isValidPubkey } from "../../shared/validation";
 
 export function createRoutes(
   pool: Pool,

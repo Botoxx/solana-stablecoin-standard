@@ -40,9 +40,8 @@ SSS-1 preset values:
 
 ```typescript
 {
-  decimals: 6,
-  enablePermanentDelegate: false,
-  enableTransferHook: false,
+  permanentDelegate: false,
+  transferHook: false,
   defaultAccountFrozen: false,
 }
 ```
@@ -69,10 +68,12 @@ The Blacklister (3) and Seizer (4) roles can technically be assigned on an SSS-1
 ## Initialization Flow
 
 ```
-Authority calls SolanaStablecoin.fromPreset(provider, authority, "sss-1", {
+Authority calls SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_1,
   name: "MyDAO Token",
   symbol: "DAO",
   uri: "https://example.com/metadata.json",
+  authority: authorityKeypair,
 })
     |
     v
@@ -94,31 +95,33 @@ No `transfer_hook::initialize_extra_account_meta_list` call is made for SSS-1.
 ### SDK
 
 ```typescript
-import { SolanaStablecoin, RoleType } from "@stbr/sss-token";
+import { SolanaStablecoin, Presets, RoleType } from "@stbr/sss-token";
 import { BN } from "@coral-xyz/anchor";
 
 // Create SSS-1 stablecoin
-const stable = await SolanaStablecoin.fromPreset(provider, authority, "sss-1", {
+const stable = await SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_1,
   name: "DAO Governance Token",
   symbol: "DGOV",
   uri: "",
+  authority: authorityKeypair,
 });
 
 // Set up roles
-await stable.addMinter(authority, minterKeypair.publicKey, new BN(1_000_000_000));
-await stable.addRole(authority, burnerKeypair.publicKey, RoleType.Burner);
-await stable.addRole(authority, pauserKeypair.publicKey, RoleType.Pauser);
+await stable.addMinter(minterKeypair.publicKey, new BN(1_000_000_000));
+await stable.addRole(burnerKeypair.publicKey, RoleType.Burner);
+await stable.addRole(pauserKeypair.publicKey, RoleType.Pauser);
 
 // Create token account and mint
-const userAta = await stable.createTokenAccount(authority, userPubkey);
-await stable.mintTokens(minterKeypair, userAta, new BN(100_000_000));
+const userAta = await stable.createTokenAccount(authorityKeypair, userPubkey);
+await stable.mint({ recipient: userAta, amount: new BN(100_000_000), minter: minterKeypair });
 
 // Check supply
 const supply = await stable.getTotalSupply();
 console.log(`Total supply: ${supply.toString()}`);
 
 // Freeze an account
-await stable.freezeAccount(authority, userAta);
+await stable.freezeAccount(userAta);
 
 // Pause everything
 await stable.pause(pauserKeypair);

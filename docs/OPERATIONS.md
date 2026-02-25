@@ -27,6 +27,9 @@ sss-token init --name "CustomStable" --symbol "CS" \
   --transfer-hook \
   --treasury <TREASURY_ADDRESS>
 
+# Custom configuration from TOML file
+sss-token init --custom config.toml
+
 # Full options
 sss-token init \
   --name <name>               # Required: token name (max 32 chars)
@@ -34,6 +37,7 @@ sss-token init \
   --uri <uri>                 # Metadata URI (default: "")
   --decimals <n>              # Decimal places (default: 6)
   --preset <sss-1|sss-2>     # Use preset configuration
+  --custom <path>             # TOML config file (merged with CLI flags)
   --permanent-delegate        # Enable permanent delegate extension
   --transfer-hook             # Enable transfer hook extension
   --treasury <address>        # Treasury address (default: authority pubkey)
@@ -120,10 +124,27 @@ sss-token minters remove \
   --config <CONFIG_PDA> \
   --address <PUBKEY>
 
-# View minter info and remaining quota
-sss-token minters info \
+# List all minters (or a specific minter)
+sss-token minters list \
+  --config <CONFIG_PDA>
+sss-token minters list \
   --config <CONFIG_PDA> \
-  --address <PUBKEY>
+  --address <PUBKEY>              # Show specific minter's quota
+```
+
+### Query Commands
+
+```bash
+# Show current token supply
+sss-token supply --config <CONFIG_PDA>
+
+# List token holders (with optional minimum balance filter)
+sss-token holders --config <CONFIG_PDA>
+sss-token holders --config <CONFIG_PDA> --min-balance 100
+
+# Show recent on-chain events (audit log)
+sss-token audit-log --config <CONFIG_PDA>
+sss-token audit-log --config <CONFIG_PDA> --action mint --limit 50
 ```
 
 ### Compliance Operations (SSS-2)
@@ -172,7 +193,7 @@ cp .env.example .env
 # 2. Edit .env with your values
 #    - RPC_URL: your Solana RPC endpoint
 #    - PROGRAM_ID / HOOK_PROGRAM_ID: already set to defaults
-#    - AUTHORITY_KEYPAIR_PATH: path to operator keypair
+#    - AUTHORITY_KEYPAIR: operator keypair (JSON array or path)
 
 # 3. Start all services
 docker compose up -d
@@ -207,7 +228,7 @@ docker compose logs -f compliance
 RPC_URL=http://127.0.0.1:8899       # Solana RPC endpoint
 PROGRAM_ID=Fjv9YM4...               # sss-token program ID
 HOOK_PROGRAM_ID=7z98ECJ...          # transfer-hook program ID
-AUTHORITY_KEYPAIR_PATH=~/.config/solana/id.json
+AUTHORITY_KEYPAIR=                          # JSON array or path to keypair file
 
 # PostgreSQL
 POSTGRES_URL=postgresql://sss:sss@localhost:5432/sss
@@ -223,6 +244,9 @@ PORT_INDEXER=3001
 PORT_MINT_BURN=3002
 PORT_COMPLIANCE=3003
 PORT_WEBHOOK=3004
+
+# Authentication
+API_SECRET=                             # Bearer token for service APIs (skip if unset)
 
 # Logging
 LOG_LEVEL=info                       # debug, info, warn, error

@@ -62,28 +62,31 @@ This separation enforces dual-authorization for compliance actions: one party id
 Every `transfer_checked` call on an SSS-2 token triggers the transfer hook program. The hook performs three checks in order:
 
 ```
-1. VERIFY: Source token account owned by Token-2022
-   (prevents direct invocation attacks)
+1. VERIFY: Source token account `transferring` flag via
+   TransferHookAccount TLV extension (rejects direct invocation)
    |
    v
-2. CHECK: StablecoinConfig.paused == false
+2. VALIDATE: Config account owner matches sss-token program
+   |
+   v
+3. CHECK: StablecoinConfig.paused == false
    Read paused flag from config PDA
    REJECT with "Paused" if true
    |
    v
-3. CHECK: Source not blacklisted
+4. CHECK: Source not blacklisted
    Read BlacklistEntry PDA for source owner
    REJECT with "SenderBlacklisted" if active == true
    PDA doesn't exist = not blacklisted (normal case)
    |
    v
-4. CHECK: Destination not blacklisted
+5. CHECK: Destination not blacklisted
    Read BlacklistEntry PDA for destination owner
    REJECT with "RecipientBlacklisted" if active == true
    PDA doesn't exist = not blacklisted (normal case)
    |
    v
-5. ALLOW transfer
+6. ALLOW transfer
 ```
 
 The hook resolves extra accounts via the ExtraAccountMetaList PDA:
@@ -96,7 +99,7 @@ The hook resolves extra accounts via the ExtraAccountMetaList PDA:
 | 7 | Source blacklist entry PDA | External PDA: `["blacklist", config, source_owner]` |
 | 8 | Dest blacklist entry PDA | External PDA: `["blacklist", config, dest_owner]` |
 
-Blacklist PDAs that don't exist are harmless -- the hook checks `data_is_empty()` and skips validation. This means the normal (non-blacklisted) case has no PDA creation cost.
+The hook uses a fail-closed pattern for blacklist checks. If the PDA account has no data (`data_is_empty()`), the address is not blacklisted. If data exists but the account owner or discriminator is invalid, the transfer is rejected -- indeterminate state blocks rather than allows. This means the normal (non-blacklisted) case has no PDA creation cost.
 
 ### Blacklist Lifecycle
 
@@ -197,9 +200,8 @@ SSS-2 preset values:
 
 ```typescript
 {
-  decimals: 6,
-  enablePermanentDelegate: true,
-  enableTransferHook: true,
+  permanentDelegate: true,
+  transferHook: true,
   defaultAccountFrozen: false,
 }
 ```
@@ -207,18 +209,20 @@ SSS-2 preset values:
 The `defaultAccountFrozen` option can be enabled via override for a stricter model where all new token accounts start frozen and must be explicitly thawed (allowlist pattern):
 
 ```typescript
-const stable = await SolanaStablecoin.fromPreset(provider, authority, "sss-2", {
+const stable = await SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_2,
   name: "StrictUSD",
   symbol: "SUSD",
   uri: "",
-  defaultAccountFrozen: true,  // Allowlist model
+  authority: authorityKeypair,
+  extensions: { defaultAccountFrozen: true },  // Allowlist model
 });
 ```
 
 ## Initialization (Full SSS-2)
 
 ```
-Authority calls SolanaStablecoin.fromPreset(provider, authority, "sss-2", {...})
+Authority calls SolanaStablecoin.create(connection, { preset: Presets.SSS_2, ... })
     |
     v
 sss-token::initialize
@@ -252,33 +256,35 @@ Stablecoin is fully operational
 ### Full Compliance Workflow
 
 ```typescript
-import { SolanaStablecoin, RoleType } from "@stbr/sss-token";
+import { SolanaStablecoin, Presets, RoleType } from "@stbr/sss-token";
 import { BN } from "@coral-xyz/anchor";
 
 // 1. Create SSS-2 stablecoin
-const stable = await SolanaStablecoin.fromPreset(provider, authority, "sss-2", {
+const stable = await SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_2,
   name: "RegulatedUSD",
   symbol: "RUSD",
   uri: "https://example.com/rusd.json",
+  authority,
   treasury: treasuryPubkey,
 });
 
 // 2. Set up all roles
-await stable.addMinter(authority, minter.publicKey, new BN(10_000_000_000));
-await stable.addRole(authority, burner.publicKey, RoleType.Burner);
-await stable.addRole(authority, pauser.publicKey, RoleType.Pauser);
-await stable.addRole(authority, blacklister.publicKey, RoleType.Blacklister);
-await stable.addRole(authority, seizer.publicKey, RoleType.Seizer);
+await stable.addMinter(minter.publicKey, new BN(10_000_000_000));
+await stable.addRole(burner.publicKey, RoleType.Burner);
+await stable.addRole(pauser.publicKey, RoleType.Pauser);
+await stable.addRole(blacklister.publicKey, RoleType.Blacklister);
+await stable.addRole(seizer.publicKey, RoleType.Seizer);
 
 // 3. Normal operations
 const userAta = await stable.createTokenAccount(authority, user.publicKey);
-await stable.mintTokens(minter, userAta, new BN(1_000_000_000));
+await stable.mint({ recipient: userAta, amount: new BN(1_000_000_000), minter });
 
 // 4. Compliance incident: user identified on OFAC SDN list
-await stable.compliance.addToBlacklist(
-  blacklister,
+await stable.compliance.blacklistAdd(
   user.publicKey,
-  "OFAC SDN match - Entity XYZ"
+  "OFAC SDN match - Entity XYZ",
+  blacklister
 );
 
 // At this point:
@@ -287,8 +293,8 @@ await stable.compliance.addToBlacklist(
 // - Existing balance is still in user's account
 
 // 5. Freeze + seize
-await stable.freezeAccount(authority, userAta);
-await stable.compliance.seize(seizer, userAta, treasuryAta, new BN(1_000_000_000));
+await stable.freezeAccount(userAta);
+await stable.compliance.seize(userAta, treasuryAta, new BN(1_000_000_000), seizer);
 
 // Done. Tokens in treasury. User's account is frozen and empty.
 ```

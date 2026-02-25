@@ -23,6 +23,25 @@ GET /health
 }
 ```
 
+### Authentication
+
+All endpoints (except `/health`) are protected by Bearer token authentication when the `API_SECRET` environment variable is set. If `API_SECRET` is not set, auth is skipped (development mode).
+
+```bash
+# With authentication enabled
+curl -H "Authorization: Bearer <API_SECRET>" http://localhost:3001/events
+
+# /health endpoints are always unauthenticated
+curl http://localhost:3001/health
+```
+
+**Error (401):**
+```json
+{
+  "error": "Unauthorized — missing Bearer token"
+}
+```
+
 ### Error Response Format
 
 All error responses follow:
@@ -389,19 +408,19 @@ curl "http://localhost:3003/audit-log?action=blacklist_add&limit=50"
   {
     "id": 1,
     "action": "blacklist_add",
-    "address": "Bad1...actor",
     "operator": "compliance-admin",
-    "reason": "OFAC SDN match",
-    "result": null,
+    "target": "Bad1...actor",
+    "details": { "reason": "OFAC SDN match" },
+    "signature": null,
     "created_at": "2026-02-24T12:00:00.000Z"
   },
   {
     "id": 2,
     "action": "screen",
-    "address": "New1...user",
-    "operator": null,
-    "reason": null,
-    "result": { "flagged": false, "source": "OFAC_SDN" },
+    "operator": "system",
+    "target": "New1...user",
+    "details": { "flagged": false, "source": "OFAC_SDN" },
+    "signature": null,
     "created_at": "2026-02-24T12:05:00.000Z"
   }
 ]

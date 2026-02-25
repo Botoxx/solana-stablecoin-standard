@@ -58,7 +58,7 @@ The transfer hook program is registered at mint creation when `enable_transfer_h
 
 ## Account Layout
 
-### StablecoinConfig (248 bytes)
+### StablecoinConfig (256 bytes)
 
 The central configuration account. One per stablecoin mint.
 
@@ -86,7 +86,7 @@ Total: 256 bytes (8 discriminator + 248 fields)
 
 The `_reserved` field (64 bytes) provides space for future upgrades without reallocation.
 
-### MinterConfig (121 bytes)
+### MinterConfig (153 bytes)
 
 Per-minter quota tracking. One per (config, minter) pair.
 
@@ -99,12 +99,12 @@ Offset  Size  Field           Type
 72      8     quota_total     u64
 80      8     quota_remaining u64
 88      1     bump            u8
-89      32    _reserved       [u8; 32]
+89      64    _reserved       [u8; 64]
 ------
-Total: 121 bytes
+Total: 153 bytes
 ```
 
-### RoleAssignment (146 bytes)
+### RoleAssignment (178 bytes)
 
 RBAC assignment record. One per (config, role_type, address) tuple.
 
@@ -118,12 +118,12 @@ Offset  Size  Field           Type
 73      32    assigned_by     Pubkey
 105     8     assigned_at     i64
 113     1     bump            u8
-114     32    _reserved       [u8; 32]
+114     64    _reserved       [u8; 64]
 ------
-Total: 146 bytes
+Total: 178 bytes
 ```
 
-### BlacklistEntry (278 bytes)
+### BlacklistEntry (310 bytes)
 
 PDA-per-address blacklist record. Soft-deleted (active flag) to preserve audit trail.
 
@@ -138,9 +138,9 @@ Offset  Size    Field            Type
 212     32      blacklisted_by   Pubkey
 244     1       active           bool
 245     1       bump             u8
-246     32      _reserved        [u8; 32]
+246     64      _reserved        [u8; 64]
 ------
-Total: 278 bytes
+Total: 310 bytes
 ```
 
 ## PDA Derivation Table
@@ -222,20 +222,22 @@ Token-2022 program
     v
 transfer_hook::transfer_hook
     |
-    |-- 1. Verify source token account is owned by Token-2022
-    |       (prevents direct invocation attacks)
+    |-- 1. Verify source token account `transferring` flag via
+    |       TransferHookAccount TLV extension (rejects direct invocation)
     |
-    |-- 2. Read StablecoinConfig data (account index 6)
+    |-- 2. Validate config account owner matches sss-token program
+    |
+    |-- 3. Read StablecoinConfig data (account index 6)
     |       Parse paused flag at dynamic offset
     |       REJECT if paused == true
     |
-    |-- 3. Read source BlacklistEntry (account index 7)
+    |-- 4. Read source BlacklistEntry (account index 7)
     |       If account exists and active == true: REJECT
     |
-    |-- 4. Read dest BlacklistEntry (account index 8)
+    |-- 5. Read dest BlacklistEntry (account index 8)
     |       If account exists and active == true: REJECT
     |
-    |-- 5. Return Ok(()) -- transfer proceeds
+    |-- 6. Return Ok(()) -- transfer proceeds
     |
     v
 Token-2022 completes transfer
@@ -347,7 +349,7 @@ All events include a `timestamp` field (Unix timestamp from `Clock::get()`).
 - No `unwrap()` in program code
 - PDA bumps stored in state, never recalculated
 - Mint address validated against config on every Token-2022 CPI
-- Transfer hook verifies token account owner to prevent direct invocation
+- Transfer hook verifies `transferring` flag via TLV extension to prevent direct invocation
 - Seize requires frozen state (freeze-before-seize)
 - Account sizes use `ExtensionType::try_calculate_account_len()`, never manual math
 - Blacklist entries use soft delete (active flag) for audit trail preservation

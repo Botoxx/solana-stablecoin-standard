@@ -37,17 +37,26 @@ interface ScreeningProvider {
 
 ### Built-in Providers
 
-**OFACScreeningProvider** -- Stub for OFAC SDN (Specially Designated Nationals) list integration:
+**OFACScreeningProvider** -- OFAC SDN (Specially Designated Nationals) list integration. Operates in two modes:
+
+- **Stub mode** (default, when `OFAC_API_URL` is not set): Returns `{ flagged: false, source: "OFAC_SDN_STUB" }` for all addresses. Logs a warning at startup.
+- **Live mode** (when `OFAC_API_URL` is set): Calls the API and **fails closed** -- if the API is unreachable or returns an error, the screen throws rather than returning a false "clean" result.
 
 ```typescript
 class OFACScreeningProvider implements ScreeningProvider {
+  constructor() {
+    this.apiUrl = process.env.OFAC_API_URL;
+  }
+
   async screen(address: string): Promise<ScreeningResult> {
-    // Integration point for OFAC SDN list
-    // Production implementation would:
-    // 1. Query OFAC SDN API or local database
-    // 2. Match against known sanctioned wallet addresses
-    // 3. Return detailed match information
-    return { address, flagged: false, source: "OFAC_SDN" };
+    if (!this.apiUrl) {
+      return { address, flagged: false, source: "OFAC_SDN_STUB" };
+    }
+    // Real API call -- throws on failure (fail-closed)
+    const response = await fetch(`${this.apiUrl}/screen?address=${address}`);
+    if (!response.ok) throw new Error(`OFAC API returned ${response.status}`);
+    const data = await response.json();
+    return { address, flagged: !!data.flagged, source: "OFAC_SDN", matchType: data.matchType };
   }
 }
 ```
@@ -145,12 +154,12 @@ The indexer service subscribes to on-chain program logs and stores parsed events
 CREATE TABLE events (
   id SERIAL PRIMARY KEY,
   name VARCHAR(64) NOT NULL,          -- Event type (e.g., "BlacklistAddEvent")
-  signature VARCHAR(128) NOT NULL,     -- Transaction signature
-  slot BIGINT NOT NULL,
   authority VARCHAR(64),               -- Operator who triggered the event
-  timestamp BIGINT,                    -- Unix timestamp from on-chain Clock
-  data JSONB NOT NULL,                 -- Full event data
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  signature VARCHAR(128) NOT NULL,     -- Transaction signature
+  slot BIGINT,
+  data JSONB,                          -- Full event data
+  UNIQUE(signature, name)
 );
 ```
 
@@ -162,11 +171,11 @@ The compliance service maintains an additional audit log for compliance-specific
 CREATE TABLE audit_log (
   id SERIAL PRIMARY KEY,
   action VARCHAR(64) NOT NULL,         -- "blacklist_add", "blacklist_remove", "screen", "seize"
-  address VARCHAR(64),
-  operator VARCHAR(64),
-  reason TEXT,
-  result JSONB,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  operator VARCHAR(64),                -- Who triggered the action
+  target VARCHAR(64),                  -- Target address (if applicable)
+  details JSONB,                       -- Action-specific data (reason, amounts, etc.)
+  signature VARCHAR(128),              -- Transaction signature (for on-chain actions)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 

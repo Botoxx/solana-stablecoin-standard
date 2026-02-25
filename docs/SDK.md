@@ -32,10 +32,12 @@ export {
 
 // Types and constants
 export {
+  Presets,
   RoleType,
   ROLE_TYPE_NAMES,
   type RoleTypeValue,
   type CreateStablecoinParams,
+  type StablecoinExtensions,
   type MintParams,
   type BurnParams,
   type TransferParams,
@@ -49,7 +51,7 @@ export {
 } from "./types";
 
 // Presets
-export { PRESET_CONFIGS, getPresetConfig } from "./presets";
+export { PRESET_EXTENSIONS, resolveExtensions } from "./presets";
 ```
 
 ---
@@ -67,18 +69,18 @@ Main entry point for all stablecoin operations. Wraps both the sss-token and tra
 | `connection` | `Connection` | Solana RPC connection |
 | `configPda` | `PublicKey` | Config PDA for this stablecoin |
 | `mintAddress` | `PublicKey` | Token mint address |
+| `authority` | `PublicKey` | Current authority public key (getter) |
 | `compliance` | `ComplianceModule` | Compliance operations (blacklist, seize) |
 
 ### Static Methods
 
-#### `SolanaStablecoin.create(provider, authority, params)`
+#### `SolanaStablecoin.create(connection, params)`
 
 Creates a new stablecoin with full configuration control.
 
 ```typescript
 static async create(
-  provider: AnchorProvider,
-  authority: Keypair,
+  connection: Connection,
   params: CreateStablecoinParams
 ): Promise<SolanaStablecoin>
 ```
@@ -87,197 +89,161 @@ static async create(
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `provider` | `AnchorProvider` | Anchor provider with connection and wallet |
-| `authority` | `Keypair` | Master authority keypair (pays for account creation) |
-| `params` | `CreateStablecoinParams` | Token configuration |
+| `connection` | `Connection` | Solana RPC connection |
+| `params` | `CreateStablecoinParams` | Token configuration (includes authority keypair) |
 
-**Example:**
+The `params.preset` field selects a preset (`"sss-1"` or `"sss-2"`) which sets default extensions. The `params.extensions` field can override individual extensions. If neither is provided, SSS-1 defaults are used.
+
+When the resolved extensions include `transferHook: true`, this method also initializes the ExtraAccountMetaList PDA on the transfer-hook program.
+
+**Example (with preset):**
 
 ```typescript
-const stable = await SolanaStablecoin.create(provider, authority, {
+const stable = await SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_2,
   name: "MyUSD",
   symbol: "MUSD",
   uri: "https://example.com/metadata.json",
   decimals: 6,
-  enablePermanentDelegate: true,
-  enableTransferHook: true,
+  authority: authorityKeypair,
   treasury: treasuryPubkey,
 });
 ```
 
-When `enableTransferHook` is `true`, this method also initializes the ExtraAccountMetaList PDA on the transfer-hook program.
-
-#### `SolanaStablecoin.fromPreset(provider, authority, preset, overrides?)`
-
-Creates a stablecoin from a named preset with optional overrides.
+**Example (with manual extensions):**
 
 ```typescript
-static fromPreset(
-  provider: AnchorProvider,
-  authority: Keypair,
-  preset: Preset,
-  overrides?: Partial<CreateStablecoinParams>
-): Promise<SolanaStablecoin>
-```
-
-**Parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `preset` | `"sss-1" \| "sss-2"` | Preset name |
-| `overrides` | `Partial<CreateStablecoinParams>` | Override any preset defaults |
-
-**Example:**
-
-```typescript
-const stable = await SolanaStablecoin.fromPreset(provider, authority, "sss-2", {
-  name: "ComplianceUSD",
-  symbol: "CUSD",
-  uri: "",
+const stable = await SolanaStablecoin.create(connection, {
+  name: "MyUSD",
+  symbol: "MUSD",
+  authority: authorityKeypair,
+  extensions: {
+    permanentDelegate: true,
+    transferHook: true,
+    defaultAccountFrozen: false,
+  },
 });
 ```
 
-#### `SolanaStablecoin.load(provider, configPda)`
+#### `SolanaStablecoin.load(connection, configPda, authority)`
 
 Loads an existing stablecoin by its config PDA.
 
 ```typescript
 static async load(
-  provider: AnchorProvider,
-  configPda: PublicKey
+  connection: Connection,
+  configPda: PublicKey,
+  authority: Keypair
 ): Promise<SolanaStablecoin>
 ```
 
 **Example:**
 
 ```typescript
-const stable = await SolanaStablecoin.load(provider, configPda);
+const stable = await SolanaStablecoin.load(connection, configPda, authorityKeypair);
 const config = await stable.getConfig();
 console.log(`Mint: ${stable.mintAddress.toBase58()}`);
 ```
 
-#### `SolanaStablecoin.getPrograms(provider)`
-
-Returns raw Anchor program instances for direct access.
-
-```typescript
-static getPrograms(provider: AnchorProvider): {
-  program: Program<SssToken>;
-  hookProgram: Program<TransferHook>;
-}
-```
-
 ### Instance Methods -- Core Operations
 
-#### `mintTokens(minter, recipientTokenAccount, amount)`
+#### `mint(params)`
 
 Mints tokens to a recipient. Requires the signer to have the Minter role and sufficient quota.
 
 ```typescript
-async mintTokens(
-  minter: Keypair,
-  recipientTokenAccount: PublicKey,
-  amount: BN
-): Promise<TransactionSignature>
+async mint(params: MintParams): Promise<TransactionSignature>
 ```
 
 **Example:**
 
 ```typescript
-const sig = await stable.mintTokens(
-  minterKeypair,
-  recipientAta,
-  new BN(100_000_000)  // 100 tokens with 6 decimals
-);
+const sig = await stable.mint({
+  recipient: recipientAta,
+  amount: new BN(100_000_000),  // 100 tokens with 6 decimals
+  minter: minterKeypair,        // optional, defaults to authority
+});
 ```
 
-#### `burn(burner, tokenAccount, amount)`
+#### `burn(params)`
 
 Burns tokens from the burner's own token account. Requires the Burner role.
 
 ```typescript
-async burn(
-  burner: Keypair,
-  tokenAccount: PublicKey,
-  amount: BN
-): Promise<TransactionSignature>
-```
-
-#### `freezeAccount(authority, tokenAccount)`
-
-Freezes a token account, preventing all transfers. Requires master authority.
-
-```typescript
-async freezeAccount(
-  authority: Keypair,
-  tokenAccount: PublicKey
-): Promise<TransactionSignature>
-```
-
-#### `thawAccount(authority, tokenAccount)`
-
-Thaws a frozen token account. Requires master authority.
-
-```typescript
-async thawAccount(
-  authority: Keypair,
-  tokenAccount: PublicKey
-): Promise<TransactionSignature>
-```
-
-#### `pause(pauser)`
-
-Pauses the entire stablecoin system. All mints, burns, and transfers (via hook) are blocked. Requires the Pauser role.
-
-```typescript
-async pause(pauser: Keypair): Promise<TransactionSignature>
-```
-
-#### `unpause(pauser)`
-
-Unpauses the system. Requires the Pauser role.
-
-```typescript
-async unpause(pauser: Keypair): Promise<TransactionSignature>
-```
-
-#### `transfer(payer, source, destination, owner, amount, decimals)`
-
-Executes a transfer using `createTransferCheckedWithTransferHookInstruction`. For SSS-2, this automatically resolves the extra accounts needed by the transfer hook.
-
-```typescript
-async transfer(
-  payer: Keypair,
-  source: PublicKey,
-  destination: PublicKey,
-  owner: Keypair,
-  amount: number,
-  decimals: number
-): Promise<TransactionSignature>
+async burn(params: BurnParams): Promise<TransactionSignature>
 ```
 
 **Example:**
 
 ```typescript
-const sig = await stable.transfer(
-  payer,
-  sourceAta,
-  destAta,
-  ownerKeypair,
-  1_000_000,  // 1 token (6 decimals)
-  6
-);
+const sig = await stable.burn({
+  amount: new BN(50_000_000),
+  burner: burnerKeypair,       // optional, defaults to authority
+  tokenAccount: burnerAta,     // optional, defaults to burner's ATA
+});
+```
+
+#### `freezeAccount(address)`
+
+Freezes a token account, preventing all transfers. Requires master authority.
+
+```typescript
+async freezeAccount(address: PublicKey): Promise<TransactionSignature>
+```
+
+#### `thawAccount(address)`
+
+Thaws a frozen token account. Requires master authority.
+
+```typescript
+async thawAccount(address: PublicKey): Promise<TransactionSignature>
+```
+
+#### `pause(pauser?)`
+
+Pauses the entire stablecoin system. All mints, burns, and transfers (via hook) are blocked. Requires the Pauser role.
+
+```typescript
+async pause(pauser?: Keypair): Promise<TransactionSignature>
+```
+
+If `pauser` is omitted, the current authority keypair is used.
+
+#### `unpause(pauser?)`
+
+Unpauses the system. Requires the Pauser role.
+
+```typescript
+async unpause(pauser?: Keypair): Promise<TransactionSignature>
+```
+
+#### `transfer(params)`
+
+Executes a transfer using `createTransferCheckedWithTransferHookInstruction`. For SSS-2, this automatically resolves the extra accounts needed by the transfer hook.
+
+```typescript
+async transfer(params: TransferParams): Promise<TransactionSignature>
+```
+
+**Example:**
+
+```typescript
+const sig = await stable.transfer({
+  source: sourceAta,
+  destination: destAta,
+  owner: ownerKeypair,
+  amount: new BN(1_000_000),  // 1 token (6 decimals)
+});
 ```
 
 ### Instance Methods -- Role Management
 
-#### `addRole(authority, address, role)`
+#### `addRole(address, role)`
 
-Assigns a role to an address. Requires master authority.
+Assigns a role to an address. Uses the current authority as signer.
 
 ```typescript
 async addRole(
-  authority: Keypair,
   address: PublicKey,
   role: RoleTypeValue
 ): Promise<TransactionSignature>
@@ -288,30 +254,28 @@ async addRole(
 ```typescript
 import { RoleType } from "@stbr/sss-token";
 
-await stable.addRole(authority, pauserPubkey, RoleType.Pauser);
-await stable.addRole(authority, blacklisterPubkey, RoleType.Blacklister);
+await stable.addRole(pauserPubkey, RoleType.Pauser);
+await stable.addRole(blacklisterPubkey, RoleType.Blacklister);
 ```
 
-#### `removeRole(authority, address, role)`
+#### `removeRole(address, role)`
 
 Revokes a role from an address. Closes the RoleAssignment PDA and returns rent to authority.
 
 ```typescript
 async removeRole(
-  authority: Keypair,
   address: PublicKey,
   role: RoleTypeValue
 ): Promise<TransactionSignature>
 ```
 
-#### `addMinter(authority, minterAddress, quota)`
+#### `addMinter(address, quota)`
 
 Assigns the Minter role and creates a MinterConfig with the specified quota. This is a convenience method that calls `addRole` followed by `updateMinter`.
 
 ```typescript
 async addMinter(
-  authority: Keypair,
-  minterAddress: PublicKey,
+  address: PublicKey,
   quota: BN
 ): Promise<TransactionSignature>
 ```
@@ -319,49 +283,44 @@ async addMinter(
 **Example:**
 
 ```typescript
-await stable.addMinter(authority, minterPubkey, new BN(1_000_000_000));
+await stable.addMinter(minterPubkey, new BN(1_000_000_000));
 // minter can now mint up to 1000 tokens (6 decimals)
 ```
 
-#### `removeMinter(authority, minterAddress)`
+#### `removeMinter(address)`
 
 Removes a minter's quota configuration. Closes the MinterConfig PDA.
 
 ```typescript
-async removeMinter(
-  authority: Keypair,
-  minterAddress: PublicKey
-): Promise<TransactionSignature>
+async removeMinter(address: PublicKey): Promise<TransactionSignature>
 ```
 
-#### `updateMinterQuota(authority, minterAddress, newQuota)`
+#### `updateMinterQuota(address, newQuota)`
 
 Updates an existing minter's quota. Resets `quota_remaining` to the new value.
 
 ```typescript
 async updateMinterQuota(
-  authority: Keypair,
-  minterAddress: PublicKey,
+  address: PublicKey,
   newQuota: BN
 ): Promise<TransactionSignature>
 ```
 
 ### Instance Methods -- Authority Transfer
 
-#### `proposeAuthority(authority, newAuthority)`
+#### `proposeAuthority(newAuthority)`
 
 Proposes a new master authority. The transfer is not finalized until the new authority accepts.
 
 ```typescript
 async proposeAuthority(
-  authority: Keypair,
   newAuthority: PublicKey
 ): Promise<TransactionSignature>
 ```
 
 #### `acceptAuthority(newAuthority)`
 
-Accepts a pending authority transfer. Must be signed by the proposed new authority.
+Accepts a pending authority transfer. Must be signed by the proposed new authority. Also updates the internal `_authority` reference.
 
 ```typescript
 async acceptAuthority(
@@ -373,7 +332,7 @@ async acceptAuthority(
 
 ```typescript
 // Two-step authority transfer
-await stable.proposeAuthority(currentAuthority, newAuthorityPubkey);
+await stable.proposeAuthority(newAuthorityPubkey);
 await stable.acceptAuthority(newAuthorityKeypair);
 ```
 
@@ -405,6 +364,14 @@ Fetches minter configuration for an address. Returns `null` if not a minter.
 async getMinter(address: PublicKey): Promise<MinterState | null>
 ```
 
+#### `getAllMinters()`
+
+Fetches all minter configurations for this stablecoin. Uses a `memcmp` filter on the config field.
+
+```typescript
+async getAllMinters(): Promise<MinterState[]>
+```
+
 #### `getRole(address, role)`
 
 Fetches role assignment for an address. Returns `null` if the role is not assigned.
@@ -414,6 +381,22 @@ async getRole(
   address: PublicKey,
   role: RoleTypeValue
 ): Promise<RoleState | null>
+```
+
+#### `getBlacklistEntry(address)`
+
+Fetches the blacklist entry for an address. Delegates to `compliance.getBlacklistEntry`. Returns `null` if no entry exists.
+
+```typescript
+async getBlacklistEntry(address: PublicKey): Promise<BlacklistState | null>
+```
+
+#### `isBlacklisted(address)`
+
+Returns `true` if the address has an active blacklist entry. Delegates to `compliance.isBlacklisted`.
+
+```typescript
+async isBlacklisted(address: PublicKey): Promise<boolean>
 ```
 
 ### Instance Methods -- Token Account Helpers
@@ -453,17 +436,19 @@ Handles SSS-2 compliance operations. Accessible via `stable.compliance`.
 
 ### Methods
 
-#### `addToBlacklist(blacklister, address, reason)`
+#### `blacklistAdd(address, reason, blacklister?)`
 
 Adds an address to the on-chain blacklist. Requires the Blacklister role. Creates a BlacklistEntry PDA.
 
 ```typescript
-async addToBlacklist(
-  blacklister: Keypair,
+async blacklistAdd(
   address: PublicKey,
-  reason: string
+  reason: string,
+  blacklister?: Keypair
 ): Promise<TransactionSignature>
 ```
+
+If `blacklister` is omitted, the current authority keypair is used.
 
 **Constraints:**
 - Reason must be non-empty, max 128 characters
@@ -473,34 +458,34 @@ async addToBlacklist(
 **Example:**
 
 ```typescript
-await stable.compliance.addToBlacklist(
-  blacklisterKeypair,
+await stable.compliance.blacklistAdd(
   sanctionedAddress,
-  "OFAC SDN list match - 2024-03-15"
+  "OFAC SDN list match - 2024-03-15",
+  blacklisterKeypair  // optional
 );
 ```
 
-#### `removeFromBlacklist(blacklister, address)`
+#### `blacklistRemove(address, blacklister?)`
 
 Soft-deletes a blacklist entry (sets `active = false`). The PDA is preserved for audit trail.
 
 ```typescript
-async removeFromBlacklist(
-  blacklister: Keypair,
-  address: PublicKey
+async blacklistRemove(
+  address: PublicKey,
+  blacklister?: Keypair
 ): Promise<TransactionSignature>
 ```
 
-#### `seize(seizer, sourceTokenAccount, treasuryTokenAccount, amount)`
+#### `seize(frozenAccount, treasury, amount, seizer?)`
 
 Seizes tokens from a frozen account and transfers them to the treasury. Requires the Seizer role. The source account must be frozen before calling this method.
 
 ```typescript
 async seize(
-  seizer: Keypair,
-  sourceTokenAccount: PublicKey,
-  treasuryTokenAccount: PublicKey,
-  amount: BN
+  frozenAccount: PublicKey,
+  treasury: PublicKey,
+  amount: BN,
+  seizer?: Keypair
 ): Promise<TransactionSignature>
 ```
 
@@ -510,12 +495,12 @@ async seize(
 
 ```typescript
 // Freeze first, then seize
-await stable.freezeAccount(authority, targetAta);
+await stable.freezeAccount(targetAta);
 const sig = await stable.compliance.seize(
-  seizerKeypair,
   targetAta,
   treasuryAta,
-  new BN(50_000_000)
+  new BN(50_000_000),
+  seizerKeypair  // optional
 );
 ```
 
@@ -562,7 +547,7 @@ function getMinterPda(config: PublicKey, minter: PublicKey): [PublicKey, number]
 ```typescript
 function getRolePda(
   config: PublicKey,
-  roleType: number,
+  roleType: RoleTypeValue,
   address: PublicKey
 ): [PublicKey, number]
 // Seeds: ["role", config, [roleType], address]
@@ -596,34 +581,32 @@ const TRANSFER_HOOK_PROGRAM_ID = new PublicKey("7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKX
 
 ## Preset System
 
-### `PRESET_CONFIGS`
+### `PRESET_EXTENSIONS`
 
 ```typescript
-const PRESET_CONFIGS: Record<Preset, Omit<CreateStablecoinParams, "name" | "symbol" | "uri">> = {
+const PRESET_EXTENSIONS: Record<Preset, Required<StablecoinExtensions>> = {
   "sss-1": {
-    decimals: 6,
-    enablePermanentDelegate: false,
-    enableTransferHook: false,
+    permanentDelegate: false,
+    transferHook: false,
     defaultAccountFrozen: false,
   },
   "sss-2": {
-    decimals: 6,
-    enablePermanentDelegate: true,
-    enableTransferHook: true,
+    permanentDelegate: true,
+    transferHook: true,
     defaultAccountFrozen: false,
   },
 };
 ```
 
-### `getPresetConfig(preset, overrides?)`
+### `resolveExtensions(preset?, extensions?)`
 
-Merges preset defaults with overrides. Generates default name/symbol if not provided.
+Merges preset defaults with optional overrides. If no preset is given, SSS-1 defaults are used as the base.
 
 ```typescript
-function getPresetConfig(
-  preset: Preset,
-  overrides?: Partial<CreateStablecoinParams>
-): CreateStablecoinParams
+function resolveExtensions(
+  preset?: Preset,
+  extensions?: StablecoinExtensions
+): Required<StablecoinExtensions>
 ```
 
 ---
@@ -636,12 +619,22 @@ function getPresetConfig(
 interface CreateStablecoinParams {
   name: string;
   symbol: string;
-  uri: string;
-  decimals?: number;                   // default: 6
-  enablePermanentDelegate?: boolean;   // default: false
-  enableTransferHook?: boolean;        // default: false
-  defaultAccountFrozen?: boolean;      // default: false
-  treasury?: PublicKey;                // default: authority pubkey
+  uri?: string;                          // default: ""
+  decimals?: number;                     // default: 6
+  authority: Keypair;                    // master authority keypair
+  treasury?: PublicKey;                  // default: authority pubkey
+  preset?: Preset;                       // "sss-1" | "sss-2"
+  extensions?: StablecoinExtensions;     // manual extension overrides
+}
+```
+
+### `StablecoinExtensions`
+
+```typescript
+interface StablecoinExtensions {
+  permanentDelegate?: boolean;
+  transferHook?: boolean;
+  defaultAccountFrozen?: boolean;
 }
 ```
 
@@ -682,7 +675,7 @@ interface MinterState {
 ```typescript
 interface RoleState {
   config: PublicKey;
-  roleType: number;
+  roleType: RoleTypeValue;
   address: PublicKey;
   assignedBy: PublicKey;
   assignedAt: BN;
@@ -718,9 +711,14 @@ const RoleType = {
 type RoleTypeValue = 0 | 1 | 2 | 3 | 4;
 ```
 
-### `Preset`
+### `Presets`
 
 ```typescript
+const Presets = {
+  SSS_1: "sss-1",
+  SSS_2: "sss-2",
+} as const;
+
 type Preset = "sss-1" | "sss-2";
 ```
 
@@ -728,19 +726,21 @@ type Preset = "sss-1" | "sss-2";
 
 ```typescript
 interface MintParams {
-  recipient: PublicKey;
+  recipient: PublicKey;       // recipient token account
   amount: BN;
+  minter?: Keypair;          // defaults to authority
 }
 
 interface BurnParams {
-  tokenAccount: PublicKey;
   amount: BN;
+  burner?: Keypair;          // defaults to authority
+  tokenAccount?: PublicKey;  // defaults to burner's ATA
 }
 
 interface TransferParams {
   source: PublicKey;
   destination: PublicKey;
-  owner: PublicKey;
+  owner: Keypair;
   amount: BN;
 }
 
@@ -761,19 +761,21 @@ interface SeizeParams {
 ## Complete Example
 
 ```typescript
-import { AnchorProvider, BN } from "@coral-xyz/anchor";
-import { Keypair } from "@solana/web3.js";
-import { SolanaStablecoin, RoleType } from "@stbr/sss-token";
+import { Connection, Keypair } from "@solana/web3.js";
+import { BN } from "@coral-xyz/anchor";
+import { SolanaStablecoin, Presets, RoleType } from "@stbr/sss-token";
 
 // Setup
-const provider = AnchorProvider.env();
+const connection = new Connection("http://localhost:8899", "confirmed");
 const authority = Keypair.generate();
 
 // 1. Create SSS-2 stablecoin
-const stable = await SolanaStablecoin.fromPreset(provider, authority, "sss-2", {
+const stable = await SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_2,
   name: "ComplianceUSD",
   symbol: "CUSD",
   uri: "https://example.com/cusd.json",
+  authority,
   treasury: treasuryPubkey,
 });
 
@@ -783,23 +785,24 @@ const pauser = Keypair.generate();
 const blacklister = Keypair.generate();
 const seizer = Keypair.generate();
 
-await stable.addMinter(authority, minter.publicKey, new BN(1_000_000_000_000));
-await stable.addRole(authority, pauser.publicKey, RoleType.Pauser);
-await stable.addRole(authority, blacklister.publicKey, RoleType.Blacklister);
-await stable.addRole(authority, seizer.publicKey, RoleType.Seizer);
+await stable.addMinter(minter.publicKey, new BN(1_000_000_000_000));
+await stable.addRole(pauser.publicKey, RoleType.Pauser);
+await stable.addRole(blacklister.publicKey, RoleType.Blacklister);
+await stable.addRole(seizer.publicKey, RoleType.Seizer);
 
 // 3. Mint tokens
 const userAta = await stable.createTokenAccount(authority, userPubkey);
-await stable.mintTokens(minter, userAta, new BN(100_000_000));
+await stable.mint({ recipient: userAta, amount: new BN(100_000_000), minter });
 
 // 4. Query state
 const config = await stable.getConfig();
 const supply = await stable.getTotalSupply();
 const minterState = await stable.getMinter(minter.publicKey);
+const allMinters = await stable.getAllMinters();
 console.log(`Supply: ${supply.toString()}, Minter remaining: ${minterState.quotaRemaining.toString()}`);
 
 // 5. Compliance: blacklist and seize
-await stable.compliance.addToBlacklist(blacklister, badActor, "OFAC SDN match");
-await stable.freezeAccount(authority, badActorAta);
-await stable.compliance.seize(seizer, badActorAta, treasuryAta, new BN(100_000_000));
+await stable.compliance.blacklistAdd(badActor, "OFAC SDN match", blacklister);
+await stable.freezeAccount(badActorAta);
+await stable.compliance.seize(badActorAta, treasuryAta, new BN(100_000_000), seizer);
 ```

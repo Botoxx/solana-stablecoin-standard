@@ -1,0 +1,12 @@
+[fuzz.metrics]
+enabled = true
+
+
+[[fuzz.programs]]
+address = "Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1"
+program = "../target/deploy/sss_token.so"
+
+[[fuzz.programs]]
+address = "7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj"
+program = "../target/deploy/transfer_hook.so"
+ 

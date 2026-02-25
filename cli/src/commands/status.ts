@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
 import { SolanaStablecoin } from "@stbr/sss-token";
 import chalk from "chalk";
-import { getProvider, spinner, printError, formatTokenAmount } from "../utils";
+import { getConnection, loadKeypair, spinner, printError, formatTokenAmount } from "../utils";
 
 export function registerStatus(program: Command) {
   program
@@ -14,9 +14,10 @@ export function registerStatus(program: Command) {
     .action(async (opts) => {
       const s = spinner("Fetching status...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const config = await stable.getConfig();
         s.stop();
 

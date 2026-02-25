@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
 import { SolanaStablecoin } from "@stbr/sss-token";
 import chalk from "chalk";
-import { getProvider, getPayer, spinner, printSuccess, printError } from "../utils";
+import { getConnection, loadKeypair, spinner, printSuccess, printError } from "../utils";
 
 export function registerBlacklist(program: Command) {
   const bl = program
@@ -19,11 +19,11 @@ export function registerBlacklist(program: Command) {
     .action(async (opts) => {
       const s = spinner("Adding to blacklist...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.compliance.addToBlacklist(
-          getPayer(provider),
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.compliance.blacklistAdd(
           new PublicKey(opts.address),
           opts.reason
         );
@@ -45,11 +45,11 @@ export function registerBlacklist(program: Command) {
     .action(async (opts) => {
       const s = spinner("Removing from blacklist...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.compliance.removeFromBlacklist(
-          getPayer(provider),
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.compliance.blacklistRemove(
           new PublicKey(opts.address)
         );
         s.stop();
@@ -70,9 +70,10 @@ export function registerBlacklist(program: Command) {
     .action(async (opts) => {
       const s = spinner("Checking blacklist...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const entry = await stable.compliance.getBlacklistEntry(new PublicKey(opts.address));
         s.stop();
 

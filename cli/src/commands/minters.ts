@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
 import { SolanaStablecoin } from "@stbr/sss-token";
 import chalk from "chalk";
-import { getProvider, getPayer, spinner, printSuccess, printError, parseTokenAmount, formatTokenAmount } from "../utils";
+import { getConnection, loadKeypair, spinner, printSuccess, printError, parseTokenAmount, formatTokenAmount } from "../utils";
 
 export function registerMinters(program: Command) {
   const minters = program
@@ -20,12 +20,13 @@ export function registerMinters(program: Command) {
     .action(async (opts) => {
       const s = spinner("Adding minter...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const config = await stable.getConfig();
         const quota = parseTokenAmount(opts.quota, config.decimals);
-        const sig = await stable.addMinter(getPayer(provider), new PublicKey(opts.address), quota);
+        const sig = await stable.addMinter(new PublicKey(opts.address), quota);
         s.stop();
         printSuccess(`Added minter ${opts.address} with quota ${opts.quota}`, sig);
       } catch (err: any) {
@@ -45,10 +46,11 @@ export function registerMinters(program: Command) {
     .action(async (opts) => {
       const s = spinner("Removing minter...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.removeMinter(getPayer(provider), new PublicKey(opts.address));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.removeMinter(new PublicKey(opts.address));
         s.stop();
         printSuccess(`Removed minter ${opts.address}`, sig);
       } catch (err: any) {
@@ -59,18 +61,19 @@ export function registerMinters(program: Command) {
     });
 
   minters
-    .command("info")
-    .description("Show minter info and quota")
+    .command("list")
+    .description("Show info for a specific minter")
     .requiredOption("--config <address>", "Config PDA address")
-    .requiredOption("--address <address>", "Minter address")
+    .requiredOption("--address <address>", "Minter address to query")
     .option("--cluster <url>", "Cluster URL")
     .option("--keypair <path>", "Keypair path")
     .action(async (opts) => {
       const s = spinner("Fetching minter info...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const config = await stable.getConfig();
         const minter = await stable.getMinter(new PublicKey(opts.address));
         s.stop();

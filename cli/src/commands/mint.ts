@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
+import { BN } from "@coral-xyz/anchor";
 import { SolanaStablecoin } from "@stbr/sss-token";
-import { getProvider, getPayer, spinner, printSuccess, printError, parseTokenAmount } from "../utils";
+import { getConnection, loadKeypair, spinner, printSuccess, printError, parseTokenAmount } from "../utils";
 
 export function registerMint(program: Command) {
   program
@@ -15,17 +16,17 @@ export function registerMint(program: Command) {
     .action(async (opts) => {
       const s = spinner("Minting tokens...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const config = await stable.getConfig();
         const amount = parseTokenAmount(opts.amount, config.decimals);
 
-        const sig = await stable.mintTokens(
-          getPayer(provider),
-          new PublicKey(opts.to),
-          amount
-        );
+        const sig = await stable.mint({
+          recipient: new PublicKey(opts.to),
+          amount,
+        });
         s.stop();
         printSuccess(`Minted ${opts.amount} tokens`, sig);
       } catch (err: any) {

@@ -7,10 +7,13 @@ import { registerBurn } from "./commands/burn";
 import { registerFreeze, registerThaw } from "./commands/freeze";
 import { registerPause, registerUnpause } from "./commands/pause";
 import { registerStatus } from "./commands/status";
+import { registerSupply } from "./commands/supply";
 import { registerBlacklist } from "./commands/blacklist";
 import { registerSeize } from "./commands/seize";
 import { registerRoles } from "./commands/roles";
 import { registerMinters } from "./commands/minters";
+import { registerHolders } from "./commands/holders";
+import { registerAuditLog } from "./commands/audit-log";
 
 const program = new Command();
 
@@ -27,9 +30,12 @@ registerThaw(program);
 registerPause(program);
 registerUnpause(program);
 registerStatus(program);
+registerSupply(program);
 registerBlacklist(program);
 registerSeize(program);
 registerRoles(program);
 registerMinters(program);
+registerHolders(program);
+registerAuditLog(program);
 
 program.parse();

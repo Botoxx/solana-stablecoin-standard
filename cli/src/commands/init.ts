@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
-import { SolanaStablecoin, Preset } from "@stbr/sss-token";
-import { getProvider, getPayer, spinner, printSuccess, printError } from "../utils";
+import { SolanaStablecoin, Presets, type Preset } from "@stbr/sss-token";
+import { getConnection, loadKeypair, spinner, printSuccess, printError } from "../utils";
 
 export function registerInit(program: Command) {
   program
@@ -20,36 +20,23 @@ export function registerInit(program: Command) {
     .action(async (opts) => {
       const s = spinner("Initializing stablecoin...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
-        const authority = getPayer(provider);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
 
-        let stable: SolanaStablecoin;
-        if (opts.preset) {
-          s.start();
-          stable = await SolanaStablecoin.fromPreset(
-            provider,
-            authority,
-            opts.preset as Preset,
-            {
-              name: opts.name,
-              symbol: opts.symbol,
-              uri: opts.uri,
-              decimals: parseInt(opts.decimals),
-              treasury: opts.treasury ? new PublicKey(opts.treasury) : undefined,
-            }
-          );
-        } else {
-          s.start();
-          stable = await SolanaStablecoin.create(provider, authority, {
-            name: opts.name,
-            symbol: opts.symbol,
-            uri: opts.uri,
-            decimals: parseInt(opts.decimals),
-            enablePermanentDelegate: !!opts.permanentDelegate,
-            enableTransferHook: !!opts.transferHook,
-            treasury: opts.treasury ? new PublicKey(opts.treasury) : undefined,
-          });
-        }
+        s.start();
+        const stable = await SolanaStablecoin.create(connection, {
+          name: opts.name,
+          symbol: opts.symbol,
+          uri: opts.uri,
+          decimals: parseInt(opts.decimals),
+          authority,
+          treasury: opts.treasury ? new PublicKey(opts.treasury) : undefined,
+          preset: opts.preset as Preset | undefined,
+          extensions: opts.preset ? undefined : {
+            permanentDelegate: !!opts.permanentDelegate,
+            transferHook: !!opts.transferHook,
+          },
+        });
 
         s.stop();
         printSuccess(`Stablecoin initialized`);

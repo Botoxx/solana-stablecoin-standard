@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
 import { SolanaStablecoin } from "@stbr/sss-token";
-import { getProvider, getPayer, spinner, printSuccess, printError } from "../utils";
+import { getConnection, loadKeypair, spinner, printSuccess, printError } from "../utils";
 
 export function registerFreeze(program: Command) {
   program
@@ -14,10 +14,11 @@ export function registerFreeze(program: Command) {
     .action(async (opts) => {
       const s = spinner("Freezing account...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.freezeAccount(getPayer(provider), new PublicKey(opts.account));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.freezeAccount(new PublicKey(opts.account));
         s.stop();
         printSuccess("Account frozen", sig);
       } catch (err: any) {
@@ -39,10 +40,11 @@ export function registerThaw(program: Command) {
     .action(async (opts) => {
       const s = spinner("Thawing account...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.thawAccount(getPayer(provider), new PublicKey(opts.account));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.thawAccount(new PublicKey(opts.account));
         s.stop();
         printSuccess("Account thawed", sig);
       } catch (err: any) {

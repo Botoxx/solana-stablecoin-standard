@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
 import { SolanaStablecoin, RoleType, ROLE_TYPE_NAMES, type RoleTypeValue } from "@stbr/sss-token";
 import chalk from "chalk";
-import { getProvider, getPayer, spinner, printSuccess, printError } from "../utils";
+import { getConnection, loadKeypair, spinner, printSuccess, printError } from "../utils";
 
 const VALID_ROLES = ["minter", "burner", "pauser", "blacklister", "seizer"];
 
@@ -31,11 +31,12 @@ export function registerRoles(program: Command) {
     .action(async (opts) => {
       const s = spinner("Assigning role...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         const role = parseRole(opts.role);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.addRole(getPayer(provider), new PublicKey(opts.address), role);
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.addRole(new PublicKey(opts.address), role);
         s.stop();
         printSuccess(`Assigned ${opts.role} role to ${opts.address}`, sig);
       } catch (err: any) {
@@ -56,11 +57,12 @@ export function registerRoles(program: Command) {
     .action(async (opts) => {
       const s = spinner("Revoking role...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         const role = parseRole(opts.role);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.removeRole(getPayer(provider), new PublicKey(opts.address), role);
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.removeRole(new PublicKey(opts.address), role);
         s.stop();
         printSuccess(`Revoked ${opts.role} role from ${opts.address}`, sig);
       } catch (err: any) {
@@ -81,10 +83,11 @@ export function registerRoles(program: Command) {
     .action(async (opts) => {
       const s = spinner("Checking role...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         const role = parseRole(opts.role);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const roleState = await stable.getRole(new PublicKey(opts.address), role);
         s.stop();
 

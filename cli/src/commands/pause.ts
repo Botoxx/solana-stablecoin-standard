@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { PublicKey } from "@solana/web3.js";
 import { SolanaStablecoin } from "@stbr/sss-token";
-import { getProvider, getPayer, spinner, printSuccess, printError } from "../utils";
+import { getConnection, loadKeypair, spinner, printSuccess, printError } from "../utils";
 
 export function registerPause(program: Command) {
   program
@@ -13,10 +13,11 @@ export function registerPause(program: Command) {
     .action(async (opts) => {
       const s = spinner("Pausing...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.pause(getPayer(provider));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.pause();
         s.stop();
         printSuccess("System paused", sig);
       } catch (err: any) {
@@ -37,10 +38,11 @@ export function registerUnpause(program: Command) {
     .action(async (opts) => {
       const s = spinner("Unpausing...");
       try {
-        const provider = getProvider(opts.cluster, opts.keypair);
+        const connection = getConnection(opts.cluster);
+        const authority = loadKeypair(opts.keypair);
         s.start();
-        const stable = await SolanaStablecoin.load(provider, new PublicKey(opts.config));
-        const sig = await stable.unpause(getPayer(provider));
+        const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
+        const sig = await stable.unpause();
         s.stop();
         printSuccess("System unpaused", sig);
       } catch (err: any) {

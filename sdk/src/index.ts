@@ -10,10 +10,12 @@ export {
   TRANSFER_HOOK_PROGRAM_ID,
 } from "./pda";
 export {
+  Presets,
   RoleType,
   ROLE_TYPE_NAMES,
   type RoleTypeValue,
   type CreateStablecoinParams,
+  type StablecoinExtensions,
   type MintParams,
   type BurnParams,
   type TransferParams,
@@ -25,4 +27,4 @@ export {
   type BlacklistState,
   type Preset,
 } from "./types";
-export { PRESET_CONFIGS, getPresetConfig } from "./presets";
+export { PRESET_EXTENSIONS, resolveExtensions } from "./presets";

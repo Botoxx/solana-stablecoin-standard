@@ -1,30 +1,26 @@
-import { CreateStablecoinParams, Preset } from "./types";
+import { StablecoinExtensions, Preset, Presets } from "./types";
 
-export const PRESET_CONFIGS: Record<Preset, Omit<CreateStablecoinParams, "name" | "symbol" | "uri">> = {
-  "sss-1": {
-    decimals: 6,
-    enablePermanentDelegate: false,
-    enableTransferHook: false,
+export const PRESET_EXTENSIONS: Record<Preset, Required<StablecoinExtensions>> = {
+  [Presets.SSS_1]: {
+    permanentDelegate: false,
+    transferHook: false,
     defaultAccountFrozen: false,
   },
-  "sss-2": {
-    decimals: 6,
-    enablePermanentDelegate: true,
-    enableTransferHook: true,
+  [Presets.SSS_2]: {
+    permanentDelegate: true,
+    transferHook: true,
     defaultAccountFrozen: false,
   },
 };
 
-export function getPresetConfig(
-  preset: Preset,
-  overrides: Partial<CreateStablecoinParams> = {}
-): CreateStablecoinParams {
-  const base = PRESET_CONFIGS[preset];
+export function resolveExtensions(
+  preset?: Preset,
+  extensions?: StablecoinExtensions
+): Required<StablecoinExtensions> {
+  const base = preset ? PRESET_EXTENSIONS[preset] : PRESET_EXTENSIONS[Presets.SSS_1];
   return {
-    name: overrides.name ?? `SSS ${preset.toUpperCase()} Token`,
-    symbol: overrides.symbol ?? preset.toUpperCase(),
-    uri: overrides.uri ?? "",
-    ...base,
-    ...overrides,
+    permanentDelegate: extensions?.permanentDelegate ?? base.permanentDelegate,
+    transferHook: extensions?.transferHook ?? base.transferHook,
+    defaultAccountFrozen: extensions?.defaultAccountFrozen ?? base.defaultAccountFrozen,
   };
 }

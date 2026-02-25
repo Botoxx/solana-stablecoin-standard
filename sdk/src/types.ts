@@ -1,5 +1,12 @@
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Keypair } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
+
+export const Presets = {
+  SSS_1: "sss-1",
+  SSS_2: "sss-2",
+} as const;
+
+export type Preset = (typeof Presets)[keyof typeof Presets];
 
 export const RoleType = {
   Minter: 0,
@@ -19,31 +26,39 @@ export const ROLE_TYPE_NAMES: Record<number, string> = {
   4: "seizer",
 };
 
+export interface StablecoinExtensions {
+  permanentDelegate?: boolean;
+  transferHook?: boolean;
+  defaultAccountFrozen?: boolean;
+}
+
 export interface CreateStablecoinParams {
   name: string;
   symbol: string;
-  uri: string;
+  uri?: string;
   decimals?: number;
-  enablePermanentDelegate?: boolean;
-  enableTransferHook?: boolean;
-  defaultAccountFrozen?: boolean;
+  authority: Keypair;
   treasury?: PublicKey;
+  preset?: Preset;
+  extensions?: StablecoinExtensions;
 }
 
 export interface MintParams {
   recipient: PublicKey;
   amount: BN;
+  minter?: Keypair;
 }
 
 export interface BurnParams {
-  tokenAccount: PublicKey;
   amount: BN;
+  burner?: Keypair;
+  tokenAccount?: PublicKey;
 }
 
 export interface TransferParams {
   source: PublicKey;
   destination: PublicKey;
-  owner: PublicKey;
+  owner: Keypair;
   amount: BN;
 }
 
@@ -100,5 +115,3 @@ export interface BlacklistState {
   active: boolean;
   bump: number;
 }
-
-export type Preset = "sss-1" | "sss-2";

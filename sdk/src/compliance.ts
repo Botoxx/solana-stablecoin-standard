@@ -1,7 +1,6 @@
-import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, TransactionSignature, Keypair } from "@solana/web3.js";
+import { Program, BN } from "@coral-xyz/anchor";
+import { PublicKey, Keypair, TransactionSignature } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { BN } from "@coral-xyz/anchor";
 import { SssToken } from "./idl/sss_token";
 import { getBlacklistPda, getRolePda } from "./pda";
 import { RoleType, BlacklistState } from "./types";
@@ -10,56 +9,60 @@ export class ComplianceModule {
   constructor(
     private program: Program<SssToken>,
     private configPda: PublicKey,
-    private mint: PublicKey
+    private mint: PublicKey,
+    private getAuthority: () => Keypair
   ) {}
 
-  async addToBlacklist(
-    blacklister: Keypair,
+  async blacklistAdd(
     address: PublicKey,
-    reason: string
+    reason: string,
+    blacklister?: Keypair
   ): Promise<TransactionSignature> {
+    const signer = blacklister ?? this.getAuthority();
     const [blacklistPda] = getBlacklistPda(this.configPda, address);
     return this.program.methods
       .addToBlacklist(address, reason)
       .accounts({
-        blacklister: blacklister.publicKey,
+        blacklister: signer.publicKey,
         blacklistEntry: blacklistPda,
       } as any)
-      .signers([blacklister])
+      .signers([signer])
       .rpc();
   }
 
-  async removeFromBlacklist(
-    blacklister: Keypair,
-    address: PublicKey
+  async blacklistRemove(
+    address: PublicKey,
+    blacklister?: Keypair
   ): Promise<TransactionSignature> {
+    const signer = blacklister ?? this.getAuthority();
     const [blacklistPda] = getBlacklistPda(this.configPda, address);
     return this.program.methods
       .removeFromBlacklist(address)
       .accounts({
-        blacklister: blacklister.publicKey,
+        blacklister: signer.publicKey,
         blacklistEntry: blacklistPda,
       } as any)
-      .signers([blacklister])
+      .signers([signer])
       .rpc();
   }
 
   async seize(
-    seizer: Keypair,
-    sourceTokenAccount: PublicKey,
-    treasuryTokenAccount: PublicKey,
-    amount: BN
+    frozenAccount: PublicKey,
+    treasury: PublicKey,
+    amount: BN,
+    seizer?: Keypair
   ): Promise<TransactionSignature> {
+    const signer = seizer ?? this.getAuthority();
     return this.program.methods
       .seize(amount)
       .accounts({
-        seizer: seizer.publicKey,
+        seizer: signer.publicKey,
         mint: this.mint,
-        sourceTokenAccount,
-        treasuryTokenAccount,
+        sourceTokenAccount: frozenAccount,
+        treasuryTokenAccount: treasury,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
       } as any)
-      .signers([seizer])
+      .signers([signer])
       .rpc();
   }
 

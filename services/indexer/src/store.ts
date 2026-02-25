@@ -37,7 +37,7 @@ export async function getEvents(
   params.push(limit, offset);
 
   const result = await pool.query(
-    `SELECT name, authority, timestamp, signature, slot, data
+    `SELECT id, name, authority, timestamp, signature, slot, data
      FROM events ${where}
      ORDER BY timestamp DESC
      LIMIT $${idx++} OFFSET $${idx++}`,
@@ -45,11 +45,13 @@ export async function getEvents(
   );
 
   return result.rows.map((row) => ({
+    id: row.id,
     name: row.name,
     authority: row.authority,
     timestamp: new Date(row.timestamp).getTime(),
     signature: row.signature,
     slot: row.slot,
     data: row.data,
+    created_at: new Date(row.timestamp).toISOString(),
   }));
 }

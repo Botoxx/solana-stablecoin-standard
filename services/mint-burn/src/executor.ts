@@ -13,6 +13,9 @@ const CONFIG_SEED = Buffer.from("config");
 const MINTER_SEED = Buffer.from("minter");
 const ROLE_SEED = Buffer.from("role");
 
+const ROLE_MINTER = 0;
+const ROLE_BURNER = 1;
+
 function loadAuthorityKeypair(): Keypair {
   const raw = process.env.AUTHORITY_KEYPAIR;
   if (!raw) throw new Error("AUTHORITY_KEYPAIR env var required (JSON byte array)");
@@ -74,7 +77,7 @@ export async function processPendingRequests(
         mint, recipient, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID
       );
       const [minterPda] = deriveMinterPda(configPda, authority.publicKey, program.programId);
-      const [rolePda] = deriveRolePda(configPda, 0, authority.publicKey, program.programId);
+      const [rolePda] = deriveRolePda(configPda, ROLE_MINTER, authority.publicKey, program.programId);
 
       signature = await program.methods
         .mint(new BN(request.amount))
@@ -90,7 +93,7 @@ export async function processPendingRequests(
         .rpc();
     } else {
       const tokenAccount = new PublicKey(request.token_account);
-      const [rolePda] = deriveRolePda(configPda, 1, authority.publicKey, program.programId);
+      const [rolePda] = deriveRolePda(configPda, ROLE_BURNER, authority.publicKey, program.programId);
 
       signature = await program.methods
         .burn(new BN(request.amount))

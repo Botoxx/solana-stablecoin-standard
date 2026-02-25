@@ -30,6 +30,7 @@ services:
     build:
       context: ./services
       dockerfile: indexer/Dockerfile
+    stop_grace_period: 30s
     ports:
       - "${PORT_INDEXER:-3001}:3001"
     environment:
@@ -57,6 +58,7 @@ services:
     build:
       context: ./services
       dockerfile: mint-burn/Dockerfile
+    stop_grace_period: 30s
     ports:
       - "${PORT_MINT_BURN:-3002}:3002"
     environment:
@@ -109,6 +111,7 @@ services:
     build:
       context: ./services
       dockerfile: webhook/Dockerfile
+    stop_grace_period: 30s
     ports:
       - "${PORT_WEBHOOK:-3004}:3004"
     environment:

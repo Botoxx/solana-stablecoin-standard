@@ -2,9 +2,11 @@ import { Pool } from "pg";
 import { Logger } from "pino";
 import { SssEvent, WebhookSubscription } from "../../shared/types";
 import * as crypto from "crypto";
+import { v4 as uuidv4 } from "uuid";
 
-const MAX_RETRIES = 3;
-const BACKOFF_BASE_MS = 1000;
+const MAX_RETRIES = 5;
+// Backoff schedule per API.md: immediate, 30s, 2m, 10m, 1h
+const BACKOFF_DELAYS_MS = [0, 30_000, 120_000, 600_000, 3_600_000];
 
 export async function dispatchEvent(
   pool: Pool,
@@ -21,32 +23,48 @@ export async function dispatchEvent(
       continue;
     }
 
-    await deliverWithRetry(sub, event, logger);
+    await deliverWithRetry(pool, sub, event, logger);
   }
 }
 
 async function deliverWithRetry(
+  pool: Pool,
   sub: any,
   event: SssEvent,
   logger: Logger
 ): Promise<void> {
+  const deliveryId = uuidv4();
+
   const payload = JSON.stringify({
+    id: deliveryId,
     event: event.name,
-    data: event.data,
+    timestamp: new Date(event.timestamp).toISOString(),
     signature: event.signature,
-    timestamp: event.timestamp,
+    data: {
+      authority: event.authority,
+      ...event.data,
+      timestamp: Math.floor(event.timestamp / 1000),
+    },
   });
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (sub.secret) {
-    const hmac = crypto.createHmac("sha256", sub.secret).update(payload).digest("hex");
-    headers["X-SSS-Signature"] = hmac;
-  }
-
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // Wait before retry (first attempt is immediate)
+    if (attempt > 0) {
+      const delay = BACKOFF_DELAYS_MS[attempt] ?? BACKOFF_DELAYS_MS[BACKOFF_DELAYS_MS.length - 1];
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-SSS-Event": event.name,
+      "X-SSS-Delivery": deliveryId,
+    };
+
+    if (sub.secret) {
+      const hmac = crypto.createHmac("sha256", sub.secret).update(payload).digest("hex");
+      headers["X-SSS-Signature"] = `sha256=${hmac}`;
+    }
+
     try {
       const response = await fetch(sub.url, {
         method: "POST",
@@ -56,7 +74,7 @@ async function deliverWithRetry(
       });
 
       if (response.ok) {
-        logger.info({ subId: sub.id, event: event.name }, "Webhook delivered");
+        logger.info({ subId: sub.id, event: event.name, deliveryId }, "Webhook delivered");
         return;
       }
 
@@ -67,12 +85,15 @@ async function deliverWithRetry(
     } catch (err) {
       logger.warn({ subId: sub.id, attempt, err }, "Webhook delivery error");
     }
-
-    if (attempt < MAX_RETRIES - 1) {
-      const delay = BACKOFF_BASE_MS * Math.pow(4, attempt);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
   }
 
-  logger.error({ subId: sub.id, event: event.name }, "Webhook delivery exhausted retries");
+  // All retries exhausted — deactivate subscription
+  logger.error(
+    { subId: sub.id, event: event.name, deliveryId },
+    "Webhook delivery exhausted retries, deactivating subscription"
+  );
+  await pool.query(
+    `UPDATE webhook_subscriptions SET active = false WHERE id = $1`,
+    [sub.id]
+  );
 }

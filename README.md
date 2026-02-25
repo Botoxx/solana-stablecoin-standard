@@ -2,12 +2,24 @@
 
 An open-source SDK and standardized presets for stablecoins on Solana, built on Token-2022 extensions. Two Anchor programs, a TypeScript SDK, an admin CLI, and Docker-containerized backend services provide a complete infrastructure for issuing and managing stablecoins -- from minimal DAO tokens to regulatory-grade assets.
 
-## Program IDs
+## Program IDs (Devnet)
 
 | Program | ID |
 |---------|-----|
-| `sss_token` | `Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1` |
-| `transfer_hook` | `7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj` |
+| `sss_token` | [`Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1`](https://explorer.solana.com/address/Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1?cluster=devnet) |
+| `transfer_hook` | [`7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj`](https://explorer.solana.com/address/7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj?cluster=devnet) |
+
+### Example Transactions (Devnet)
+
+| Operation | Signature |
+|-----------|-----------|
+| Initialize SSS-2 stablecoin | [`7tMPCz...sBmC`](https://explorer.solana.com/tx/7tMPCzEq9JoXeGz2xH9TPnM1boiWdYhpoarb5kh3uhsoCNCJ18H5D3phKQCCzkWQfuz79RpYYGNndHVgV1vsBmC?cluster=devnet) |
+| Init transfer hook metas | [`39UV7w...dKuv`](https://explorer.solana.com/tx/39UV7wyaULMT4hc3XTPAXmaHjoKUwcTkL2J7572sd4JUvCYepVVbaPctoU16oozEPx1WpJztFSwVxjJmy6ZTdKuv?cluster=devnet) |
+| Mint 1000 SDUSD | [`4MmYt9...v1Q`](https://explorer.solana.com/tx/4MmYt97FfZmiiEsbaYBDb7SQATpdHvZT66dyzFHiVzMyZY5FMXiBYH84byriDt2ua4Ypaema2G4mHP6nUW3htv1Q?cluster=devnet) |
+| Pause | [`3bVZN4...ur2`](https://explorer.solana.com/tx/3bVZN4n58drBr7aQQ554FcTFQg9XDc6VoUXcSoNGvsqDcfahku88dnwr6NURnqGpPQobpB9ZJuNYrG8kUuZaEur2?cluster=devnet) |
+| Unpause | [`2NUpz8...Ejz`](https://explorer.solana.com/tx/2NUpz8xg6xW2THvaU4pNotPXJuSy7y5D3yA3QTvR4uARH7VHDSgg7tZGvW5FKy1j95BaKeToJspvSyz9zyGKwEjz?cluster=devnet) |
+
+Demo mint address: [`HbRVfD5HJupXhTKHB68KNV9RB6s2MsJwqTz5zFD5QNCt`](https://explorer.solana.com/address/HbRVfD5HJupXhTKHB68KNV9RB6s2MsJwqTz5zFD5QNCt?cluster=devnet)
 
 ## Architecture
 
@@ -26,7 +38,7 @@ Layer 1 (Base SDK)    Token creation, mint/freeze authorities, RBAC, metadata
 ```bash
 # Prerequisites: Anchor 0.31+, Solana CLI, Node.js 18+, Yarn
 
-# Build and run all 57 integration tests
+# Build and run all 65 integration tests
 anchor build && anchor test
 
 # Deploy to devnet
@@ -46,30 +58,31 @@ services/
   mint-burn/          Mint/burn coordination service (port 3002)
   compliance/         Blacklist management, OFAC screening (port 3003)
   webhook/            Event subscription delivery (port 3004)
-tests/                Integration tests (4 test files, 57 tests)
+tests/                Integration tests (4 test files, 65 tests)
 docs/                 Documentation suite
 ```
 
 ## SDK Usage
 
 ```typescript
-import { SolanaStablecoin } from "@stbr/sss-token";
+import { SolanaStablecoin, Presets } from "@stbr/sss-token";
 
 // Create SSS-2 compliant stablecoin
-const stable = await SolanaStablecoin.fromPreset(provider, authority, "sss-2", {
+const stable = await SolanaStablecoin.create(connection, {
+  preset: Presets.SSS_2,
   name: "MyUSD",
   symbol: "MUSD",
-  uri: "https://example.com/metadata.json",
+  authority: authorityKeypair,
   treasury: treasuryPubkey,
 });
 
 // Mint tokens (requires minter role + quota)
-await stable.addMinter(authority, minterKeypair.publicKey, new BN(1_000_000_000));
-await stable.mintTokens(minterKeypair, recipientTokenAccount, new BN(100_000_000));
+await stable.addMinter(minterPubkey, new BN(1_000_000_000));
+await stable.mint({ recipient: tokenAccount, amount: new BN(100_000_000) });
 
-// Compliance operations
-await stable.compliance.addToBlacklist(blacklister, address, "OFAC SDN match");
-await stable.compliance.seize(seizer, frozenTokenAccount, treasuryTokenAccount, amount);
+// Compliance operations (SSS-2)
+await stable.compliance.blacklistAdd(address, "OFAC SDN match");
+await stable.compliance.seize(frozenTokenAccount, treasuryTokenAccount, amount);
 ```
 
 ## CLI Usage

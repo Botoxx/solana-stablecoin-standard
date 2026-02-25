@@ -11,6 +11,10 @@ pub struct AddToBlacklist<'info> {
     #[account(mut)]
     pub blacklister: Signer<'info>,
 
+    /// Design note (spec §3.3 "no-op"): Returns ComplianceNotEnabled error
+    /// instead of silently succeeding. True no-op is impossible because Anchor
+    /// validates the Blacklister role PDA before the handler — on SSS-1 configs,
+    /// the role PDA won't exist. A clear error is better UX than "account not found."
     #[account(
         seeds = [CONFIG_SEED, config.mint.as_ref()],
         bump = config.bump,

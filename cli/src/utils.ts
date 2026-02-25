@@ -73,3 +73,30 @@ export function printSuccess(msg: string, sig?: string) {
 export function printError(msg: string) {
   console.error(chalk.red("  ") + msg);
 }
+
+/**
+ * Parse a simple TOML config file into a flat key-value map.
+ * Supports: key = "value", key = value, comments (#), [section] headers (ignored).
+ */
+export function parseTomlConfig(filePath: string): Record<string, string> {
+  if (!fs.existsSync(filePath)) {
+    console.error(chalk.red(`Config file not found: ${filePath}`));
+    process.exit(1);
+  }
+  const content = fs.readFileSync(filePath, "utf-8");
+  const result: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("[")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    // Strip quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    result[key] = val;
+  }
+  return result;
+}

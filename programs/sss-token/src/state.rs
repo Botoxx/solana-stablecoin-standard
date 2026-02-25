@@ -1,5 +1,12 @@
 use anchor_lang::prelude::*;
 
+/// Central configuration for a stablecoin instance.
+///
+/// **Design note (spec §3.1):** `name`, `symbol`, and `uri` are intentionally
+/// stored in Token-2022's native MetadataPointer + TokenMetadata extensions
+/// (the PYUSD pattern) rather than duplicated here. This avoids double rent
+/// costs and eliminates a two-source-of-truth consistency problem. Query
+/// metadata via `spl_token_metadata_interface` or the SDK's `getAccountInfo`.
 #[account]
 pub struct StablecoinConfig {
     pub authority: Pubkey,

@@ -2071,6 +2071,7 @@ name = "sss-token"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "solana-security-txt",
  "spl-tlv-account-resolution 0.7.0",
  "spl-token-2022",
  "spl-token-metadata-interface",
@@ -2201,6 +2202,7 @@ name = "transfer-hook"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "solana-security-txt",
  "spl-tlv-account-resolution 0.7.0",
  "spl-token-2022",
  "spl-transfer-hook-interface",

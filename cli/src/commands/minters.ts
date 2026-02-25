@@ -62,29 +62,46 @@ export function registerMinters(program: Command) {
 
   minters
     .command("list")
-    .description("Show info for a specific minter")
+    .description("List all minters, or show info for a specific minter")
     .requiredOption("--config <address>", "Config PDA address")
-    .requiredOption("--address <address>", "Minter address to query")
+    .option("--address <address>", "Minter address to query (omit to list all)")
     .option("--cluster <url>", "Cluster URL")
     .option("--keypair <path>", "Keypair path")
     .action(async (opts) => {
-      const s = spinner("Fetching minter info...");
+      const s = spinner("Fetching minters...");
       try {
         const connection = getConnection(opts.cluster);
         const authority = loadKeypair(opts.keypair);
         s.start();
         const stable = await SolanaStablecoin.load(connection, new PublicKey(opts.config), authority);
         const config = await stable.getConfig();
-        const minter = await stable.getMinter(new PublicKey(opts.address));
-        s.stop();
 
-        if (minter) {
-          console.log(chalk.bold(`\n  Minter: ${opts.address}`));
-          console.log(`  Quota Total:     ${formatTokenAmount(minter.quotaTotal.toString(), config.decimals)}`);
-          console.log(`  Quota Remaining: ${formatTokenAmount(minter.quotaRemaining.toString(), config.decimals)}`);
-          console.log(`  Used:            ${formatTokenAmount(minter.quotaTotal.sub(minter.quotaRemaining).toString(), config.decimals)}`);
+        if (opts.address) {
+          const minter = await stable.getMinter(new PublicKey(opts.address));
+          s.stop();
+          if (minter) {
+            console.log(chalk.bold(`\n  Minter: ${opts.address}`));
+            console.log(`  Quota Total:     ${formatTokenAmount(minter.quotaTotal.toString(), config.decimals)}`);
+            console.log(`  Quota Remaining: ${formatTokenAmount(minter.quotaRemaining.toString(), config.decimals)}`);
+            console.log(`  Used:            ${formatTokenAmount(minter.quotaTotal.sub(minter.quotaRemaining).toString(), config.decimals)}`);
+          } else {
+            console.log(chalk.yellow(`\n  ${opts.address} is not a minter`));
+          }
         } else {
-          console.log(chalk.yellow(`\n  ${opts.address} is not a minter`));
+          const allMinters = await stable.getAllMinters();
+          s.stop();
+          if (allMinters.length === 0) {
+            console.log(chalk.yellow("\n  No minters configured"));
+          } else {
+            console.log(chalk.bold(`\n  Minters (${allMinters.length}):\n`));
+            for (const m of allMinters) {
+              console.log(`  ${chalk.cyan(m.minter.toBase58())}`);
+              console.log(`    Quota:     ${formatTokenAmount(m.quotaTotal.toString(), config.decimals)}`);
+              console.log(`    Remaining: ${formatTokenAmount(m.quotaRemaining.toString(), config.decimals)}`);
+              console.log(`    Used:      ${formatTokenAmount(m.quotaTotal.sub(m.quotaRemaining).toString(), config.decimals)}`);
+              console.log();
+            }
+          }
         }
         console.log();
       } catch (err: any) {

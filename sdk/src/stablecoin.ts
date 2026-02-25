@@ -401,6 +401,13 @@ export class SolanaStablecoin {
     }
   }
 
+  async getAllMinters(): Promise<MinterState[]> {
+    const accounts = await this.program.account.minterConfig.all([
+      { memcmp: { offset: 8, bytes: this.configPda.toBase58() } },
+    ]);
+    return accounts.map((a) => a.account as unknown as MinterState);
+  }
+
   async getRole(address: PublicKey, role: RoleTypeValue): Promise<RoleState | null> {
     const [rolePda] = getRolePda(this.configPda, role, address);
     try {

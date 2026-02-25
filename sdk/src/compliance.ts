@@ -24,6 +24,7 @@ export class ComplianceModule {
       .addToBlacklist(address, reason)
       .accounts({
         blacklister: signer.publicKey,
+        config: this.configPda,
         blacklistEntry: blacklistPda,
       } as any)
       .signers([signer])
@@ -40,6 +41,7 @@ export class ComplianceModule {
       .removeFromBlacklist(address)
       .accounts({
         blacklister: signer.publicKey,
+        config: this.configPda,
         blacklistEntry: blacklistPda,
       } as any)
       .signers([signer])
@@ -57,6 +59,7 @@ export class ComplianceModule {
       .seize(amount)
       .accounts({
         seizer: signer.publicKey,
+        config: this.configPda,
         mint: this.mint,
         sourceTokenAccount: frozenAccount,
         treasuryTokenAccount: treasury,

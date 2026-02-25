@@ -13,13 +13,11 @@ An open-source SDK and standardized presets for stablecoins on Solana, built on 
 
 | Operation | Signature |
 |-----------|-----------|
-| Initialize SSS-2 stablecoin | [`7tMPCz...sBmC`](https://explorer.solana.com/tx/7tMPCzEq9JoXeGz2xH9TPnM1boiWdYhpoarb5kh3uhsoCNCJ18H5D3phKQCCzkWQfuz79RpYYGNndHVgV1vsBmC?cluster=devnet) |
-| Init transfer hook metas | [`39UV7w...dKuv`](https://explorer.solana.com/tx/39UV7wyaULMT4hc3XTPAXmaHjoKUwcTkL2J7572sd4JUvCYepVVbaPctoU16oozEPx1WpJztFSwVxjJmy6ZTdKuv?cluster=devnet) |
-| Mint 1000 SDUSD | [`4MmYt9...v1Q`](https://explorer.solana.com/tx/4MmYt97FfZmiiEsbaYBDb7SQATpdHvZT66dyzFHiVzMyZY5FMXiBYH84byriDt2ua4Ypaema2G4mHP6nUW3htv1Q?cluster=devnet) |
-| Pause | [`3bVZN4...ur2`](https://explorer.solana.com/tx/3bVZN4n58drBr7aQQ554FcTFQg9XDc6VoUXcSoNGvsqDcfahku88dnwr6NURnqGpPQobpB9ZJuNYrG8kUuZaEur2?cluster=devnet) |
-| Unpause | [`2NUpz8...Ejz`](https://explorer.solana.com/tx/2NUpz8xg6xW2THvaU4pNotPXJuSy7y5D3yA3QTvR4uARH7VHDSgg7tZGvW5FKy1j95BaKeToJspvSyz9zyGKwEjz?cluster=devnet) |
+| Mint 1000 SDUSD | [`2HGLkZ...5DKv`](https://explorer.solana.com/tx/2HGLkZFjYAznVGhbHUnuoaXV3H1pUgaw61Ut7xagmGByoSKZbYZdRPTB5KaAf2ZFVaSpNq2MTHJGJUEPAyZp5DKv?cluster=devnet) |
+| Blacklist address | [`5Tjk4b...6sA4`](https://explorer.solana.com/tx/5Tjk4bJoj5Luakj3B9548Wz3waLaFoqXkNA61BvS9V8U9oANhwCfSqU9DfMQd9tLK57xF5oFAfp15QD58yWz6sA4?cluster=devnet) |
+| Unblacklist address | [`G7FAtS...xUeL`](https://explorer.solana.com/tx/G7FAtSn9j2d2XCn7mPVqGxszcmZhjFTEo2f5Co8YPDqoDqWnK24yVrYjtrCvjkEckqq2XzzNbTYrhhC8xocxUeL?cluster=devnet) |
 
-Demo mint address: [`HbRVfD5HJupXhTKHB68KNV9RB6s2MsJwqTz5zFD5QNCt`](https://explorer.solana.com/address/HbRVfD5HJupXhTKHB68KNV9RB6s2MsJwqTz5zFD5QNCt?cluster=devnet)
+Demo mint: [`AHAZWMZuSRPA94qyEzN7H6BsrMwnTr3ZofeXsUZ6wUms`](https://explorer.solana.com/address/AHAZWMZuSRPA94qyEzN7H6BsrMwnTr3ZofeXsUZ6wUms?cluster=devnet)
 
 ## Architecture
 
@@ -38,7 +36,7 @@ Layer 1 (Base SDK)    Token creation, mint/freeze authorities, RBAC, metadata
 ```bash
 # Prerequisites: Anchor 0.31+, Solana CLI, Node.js 18+, Yarn
 
-# Build and run all 65 integration tests
+# Build and run all 66 integration tests
 anchor build && anchor test
 
 # Deploy to devnet
@@ -58,7 +56,7 @@ services/
   mint-burn/          Mint/burn coordination service (port 3002)
   compliance/         Blacklist management, OFAC screening (port 3003)
   webhook/            Event subscription delivery (port 3004)
-tests/                Integration tests (4 test files, 65 tests)
+tests/                Integration tests (4 test files, 66 tests)
 docs/                 Documentation suite
 ```
 

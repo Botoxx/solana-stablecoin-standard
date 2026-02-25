@@ -192,6 +192,7 @@ export class SolanaStablecoin {
       .mint(params.amount)
       .accounts({
         minter: minter.publicKey,
+        config: this.configPda,
         minterConfig: minterPda,
         mint: this.mintAddress,
         recipientTokenAccount: params.recipient,
@@ -217,6 +218,7 @@ export class SolanaStablecoin {
       .burn(params.amount)
       .accounts({
         burner: burner.publicKey,
+        config: this.configPda,
         mint: this.mintAddress,
         burnerTokenAccount: tokenAccount,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -230,6 +232,7 @@ export class SolanaStablecoin {
       .freezeAccount()
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         mint: this.mintAddress,
         tokenAccount: address,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -243,6 +246,7 @@ export class SolanaStablecoin {
       .thawAccount()
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         mint: this.mintAddress,
         tokenAccount: address,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -255,7 +259,7 @@ export class SolanaStablecoin {
     const signer = pauser ?? this._authority;
     return this.program.methods
       .pause()
-      .accounts({ pauser: signer.publicKey } as any)
+      .accounts({ pauser: signer.publicKey, config: this.configPda } as any)
       .signers([signer])
       .rpc();
   }
@@ -264,7 +268,7 @@ export class SolanaStablecoin {
     const signer = pauser ?? this._authority;
     return this.program.methods
       .unpause()
-      .accounts({ pauser: signer.publicKey } as any)
+      .accounts({ pauser: signer.publicKey, config: this.configPda } as any)
       .signers([signer])
       .rpc();
   }
@@ -300,6 +304,7 @@ export class SolanaStablecoin {
       .updateRoles(address, { [ROLE_TYPE_NAMES[role]]: {} } as any, { assign: {} })
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         roleAssignment: rolePda,
       } as any)
       .signers([this._authority])
@@ -315,6 +320,7 @@ export class SolanaStablecoin {
       .updateRoles(address, { [ROLE_TYPE_NAMES[role]]: {} } as any, { revoke: {} })
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         roleAssignment: rolePda,
       } as any)
       .signers([this._authority])
@@ -331,6 +337,7 @@ export class SolanaStablecoin {
       .updateMinter(address, { add: { quota } })
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         minterConfig: minterPda,
       } as any)
       .signers([this._authority])
@@ -343,6 +350,7 @@ export class SolanaStablecoin {
       .updateMinter(address, { remove: {} })
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         minterConfig: minterPda,
       } as any)
       .signers([this._authority])
@@ -358,6 +366,7 @@ export class SolanaStablecoin {
       .updateMinter(address, { updateQuota: { newQuota } })
       .accounts({
         authority: this._authority.publicKey,
+        config: this.configPda,
         minterConfig: minterPda,
       } as any)
       .signers([this._authority])
@@ -369,7 +378,7 @@ export class SolanaStablecoin {
   async proposeAuthority(newAuthority: PublicKey): Promise<TransactionSignature> {
     return this.program.methods
       .proposeAuthority(newAuthority)
-      .accounts({ authority: this._authority.publicKey } as any)
+      .accounts({ authority: this._authority.publicKey, config: this.configPda } as any)
       .signers([this._authority])
       .rpc();
   }
@@ -377,7 +386,7 @@ export class SolanaStablecoin {
   async acceptAuthority(newAuthority: Keypair): Promise<TransactionSignature> {
     const sig = await this.program.methods
       .acceptAuthority()
-      .accounts({ newAuthority: newAuthority.publicKey } as any)
+      .accounts({ newAuthority: newAuthority.publicKey, config: this.configPda } as any)
       .signers([newAuthority])
       .rpc();
     this._authority = newAuthority;

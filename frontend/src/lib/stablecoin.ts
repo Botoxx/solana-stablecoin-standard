@@ -213,11 +213,13 @@ export class BrowserStablecoin {
   async mint(recipient: PublicKey, amount: BN): Promise<TransactionSignature> {
     const minter = this.program.provider.publicKey!;
     const [minterPda] = getMinterPda(this.configPda, minter);
+    const [rolePda] = getRolePda(this.configPda, RoleType.Minter, minter);
     return this.program.methods
       .mint(amount)
       .accounts({
         minter,
         config: this.configPda,
+        roleAssignment: rolePda,
         minterConfig: minterPda,
         mint: this.mintAddress,
         recipientTokenAccount: recipient,
@@ -229,11 +231,13 @@ export class BrowserStablecoin {
   async burn(amount: BN, tokenAccount?: PublicKey): Promise<TransactionSignature> {
     const burner = this.program.provider.publicKey!;
     const account = tokenAccount ?? this.getAssociatedTokenAddress(burner);
+    const [rolePda] = getRolePda(this.configPda, RoleType.Burner, burner);
     return this.program.methods
       .burn(amount)
       .accounts({
         burner,
         config: this.configPda,
+        roleAssignment: rolePda,
         mint: this.mintAddress,
         burnerTokenAccount: account,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
@@ -268,16 +272,20 @@ export class BrowserStablecoin {
   }
 
   async pause(): Promise<TransactionSignature> {
+    const pauser = this.program.provider.publicKey!;
+    const [rolePda] = getRolePda(this.configPda, RoleType.Pauser, pauser);
     return this.program.methods
       .pause()
-      .accounts({ pauser: this.program.provider.publicKey!, config: this.configPda } as never)
+      .accounts({ pauser, config: this.configPda, roleAssignment: rolePda } as never)
       .rpc();
   }
 
   async unpause(): Promise<TransactionSignature> {
+    const pauser = this.program.provider.publicKey!;
+    const [rolePda] = getRolePda(this.configPda, RoleType.Pauser, pauser);
     return this.program.methods
       .unpause()
-      .accounts({ pauser: this.program.provider.publicKey!, config: this.configPda } as never)
+      .accounts({ pauser, config: this.configPda, roleAssignment: rolePda } as never)
       .rpc();
   }
 
@@ -347,24 +355,30 @@ export class BrowserStablecoin {
   // --- Compliance (SSS-2) ---
 
   async blacklistAdd(address: PublicKey, reason: string): Promise<TransactionSignature> {
+    const blacklister = this.program.provider.publicKey!;
     const [blacklistPda] = getBlacklistPda(this.configPda, address);
+    const [rolePda] = getRolePda(this.configPda, RoleType.Blacklister, blacklister);
     return this.program.methods
       .addToBlacklist(address, reason)
       .accounts({
-        blacklister: this.program.provider.publicKey!,
+        blacklister,
         config: this.configPda,
+        roleAssignment: rolePda,
         blacklistEntry: blacklistPda,
       } as never)
       .rpc();
   }
 
   async blacklistRemove(address: PublicKey): Promise<TransactionSignature> {
+    const blacklister = this.program.provider.publicKey!;
     const [blacklistPda] = getBlacklistPda(this.configPda, address);
+    const [rolePda] = getRolePda(this.configPda, RoleType.Blacklister, blacklister);
     return this.program.methods
       .removeFromBlacklist(address)
       .accounts({
-        blacklister: this.program.provider.publicKey!,
+        blacklister,
         config: this.configPda,
+        roleAssignment: rolePda,
         blacklistEntry: blacklistPda,
       } as never)
       .rpc();
@@ -375,11 +389,14 @@ export class BrowserStablecoin {
     treasuryTokenAccount: PublicKey,
     amount: BN,
   ): Promise<TransactionSignature> {
+    const seizer = this.program.provider.publicKey!;
+    const [rolePda] = getRolePda(this.configPda, RoleType.Seizer, seizer);
     return this.program.methods
       .seize(amount)
       .accounts({
-        seizer: this.program.provider.publicKey!,
+        seizer,
         config: this.configPda,
+        roleAssignment: rolePda,
         mint: this.mintAddress,
         sourceTokenAccount,
         treasuryTokenAccount,

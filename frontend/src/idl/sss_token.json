@@ -71,6 +71,12 @@
         },
         {
           "name": "config",
+          "docs": [
+            "Design note (spec §3.3 \"no-op\"): Returns ComplianceNotEnabled error",
+            "instead of silently succeeding. True no-op is impossible because Anchor",
+            "validates the Blacklister role PDA before the handler — on SSS-1 configs,",
+            "the role PDA won't exist. A clear error is better UX than \"account not found.\""
+          ],
           "pda": {
             "seeds": [
               {
@@ -614,6 +620,7 @@
         },
         {
           "name": "config",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -639,10 +646,14 @@
           "name": "role_assignment"
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "writable": true
         },
         {
           "name": "source_token_account",
+          "docs": [
+            "Mint and frozen state validated manually from account data before CPI."
+          ],
           "writable": true
         },
         {
@@ -1275,6 +1286,11 @@
       "code": 6022,
       "name": "BlacklistReasonTooLong",
       "msg": "Blacklist reason exceeds maximum length"
+    },
+    {
+      "code": 6023,
+      "name": "RoleAlreadyAssigned",
+      "msg": "Role already assigned — revoke first"
     }
   ],
   "types": [
@@ -1380,7 +1396,7 @@
             "type": {
               "array": [
                 "u8",
-                32
+                64
               ]
             }
           }
@@ -1628,7 +1644,7 @@
             "type": {
               "array": [
                 "u8",
-                32
+                64
               ]
             }
           }
@@ -1731,7 +1747,7 @@
             "type": {
               "array": [
                 "u8",
-                32
+                64
               ]
             }
           }
@@ -1822,6 +1838,15 @@
     },
     {
       "name": "StablecoinConfig",
+      "docs": [
+        "Central configuration for a stablecoin instance.",
+        "",
+        "**Design note (spec §3.1):** `name`, `symbol`, and `uri` are intentionally",
+        "stored in Token-2022's native MetadataPointer + TokenMetadata extensions",
+        "(the PYUSD pattern) rather than duplicated here. This avoids double rent",
+        "costs and eliminates a two-source-of-truth consistency problem. Query",
+        "metadata via `spl_token_metadata_interface` or the SDK's `getAccountInfo`."
+      ],
       "type": {
         "kind": "struct",
         "fields": [

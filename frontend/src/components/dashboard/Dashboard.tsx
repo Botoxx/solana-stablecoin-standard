@@ -1,10 +1,12 @@
 import { FC } from "react";
 import { BN } from "@coral-xyz/anchor";
 import { useStablecoinContext } from "../../context/StablecoinContext";
+import { useNetwork } from "../../hooks/useNetwork";
 import { StatCard } from "./StatCard";
 import { ExtensionBadges } from "./ExtensionBadges";
 import { EmptyState } from "../shared/EmptyState";
 import { useNavigate } from "react-router-dom";
+import type { Network } from "../../hooks/useNetwork";
 
 function formatBN(bn: BN, decimals: number): string {
   const raw = bn.toString();
@@ -19,15 +21,28 @@ function shortAddr(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-const AddrRow: FC<{ label: string; value: string }> = ({ label, value }) => (
+function explorerUrl(addr: string, network: Network): string {
+  const base = `https://explorer.solana.com/address/${addr}`;
+  if (network === "mainnet-beta") return base;
+  if (network === "localnet") return `${base}?cluster=custom&customUrl=http://127.0.0.1:8899`;
+  return `${base}?cluster=${network}`;
+}
+
+const AddrRow: FC<{ label: string; value: string; network: Network }> = ({ label, value, network }) => (
   <div className="flex items-center justify-between py-2 border-b border-[var(--color-border)] last:border-0">
     <span className="text-xs text-slate-500">{label}</span>
-    <span className="mono-data">{shortAddr(value)}</span>
+    <a href={explorerUrl(value, network)} target="_blank" rel="noopener noreferrer" className="mono-data hover:text-[var(--color-accent)] transition-colors" title={value}>
+      {shortAddr(value)}
+      <svg className="inline-block ml-1 h-3 w-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+      </svg>
+    </a>
   </div>
 );
 
 export const Dashboard: FC = () => {
   const { stablecoin, state, loading, refreshState } = useStablecoinContext();
+  const { network } = useNetwork();
   const navigate = useNavigate();
 
   if (loading) {
@@ -97,10 +112,10 @@ export const Dashboard: FC = () => {
         <div className="card">
           <p className="section-title mb-3">Addresses</p>
           <div>
-            <AddrRow label="Config PDA" value={stablecoin.configPda.toBase58()} />
-            <AddrRow label="Mint" value={stablecoin.mintAddress.toBase58()} />
-            <AddrRow label="Authority" value={state.authority.toBase58()} />
-            <AddrRow label="Treasury" value={state.treasury.toBase58()} />
+            <AddrRow label="Config PDA" value={stablecoin.configPda.toBase58()} network={network} />
+            <AddrRow label="Mint" value={stablecoin.mintAddress.toBase58()} network={network} />
+            <AddrRow label="Authority" value={state.authority.toBase58()} network={network} />
+            <AddrRow label="Treasury" value={state.treasury.toBase58()} network={network} />
           </div>
         </div>
       </div>

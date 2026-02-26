@@ -1,0 +1,29 @@
+@import "@solana/wallet-adapter-react-ui/styles.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: theme("colors.emerald.500");
+    --color-danger: theme("colors.rose.500");
+    --color-warning: theme("colors.amber.500");
+    --color-info: theme("colors.sky.500");
+  }
+
+  body {
+    @apply min-h-screen;
+  }
+
+  /* wallet adapter overrides */
+  .wallet-adapter-button {
+    @apply !bg-slate-800 !border !border-slate-700 hover:!bg-slate-700 !rounded-lg !text-sm !h-9 !px-4;
+  }
+  .wallet-adapter-modal-wrapper {
+    @apply !bg-slate-900 !border !border-slate-700 !rounded-xl;
+  }
+  .wallet-adapter-modal-list li {
+    @apply !bg-slate-800 hover:!bg-slate-700 !rounded-lg;
+  }
+}

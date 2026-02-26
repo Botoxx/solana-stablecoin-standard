@@ -8,6 +8,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import type { SssToken } from "../idl/sss_token";
 import type { TransferHook } from "../idl/transfer_hook";
@@ -210,10 +211,15 @@ export class BrowserStablecoin {
 
   // --- Operations ---
 
-  async mint(recipient: PublicKey, amount: BN): Promise<TransactionSignature> {
+  async mint(recipientWallet: PublicKey, amount: BN): Promise<TransactionSignature> {
     const minter = this.program.provider.publicKey!;
     const [minterPda] = getMinterPda(this.configPda, minter);
     const [rolePda] = getRolePda(this.configPda, RoleType.Minter, minter);
+    const recipientAta = this.getAssociatedTokenAddress(recipientWallet);
+    const createAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+      minter, recipientAta, recipientWallet, this.mintAddress,
+      TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID,
+    );
     return this.program.methods
       .mint(amount)
       .accounts({
@@ -222,15 +228,17 @@ export class BrowserStablecoin {
         roleAssignment: rolePda,
         minterConfig: minterPda,
         mint: this.mintAddress,
-        recipientTokenAccount: recipient,
+        recipientTokenAccount: recipientAta,
         tokenProgram: TOKEN_2022_PROGRAM_ID,
       } as never)
+      .preInstructions([createAtaIx])
       .rpc();
   }
 
-  async burn(amount: BN, tokenAccount?: PublicKey): Promise<TransactionSignature> {
+  async burn(amount: BN, sourceWallet?: PublicKey): Promise<TransactionSignature> {
     const burner = this.program.provider.publicKey!;
-    const account = tokenAccount ?? this.getAssociatedTokenAddress(burner);
+    const owner = sourceWallet ?? burner;
+    const account = this.getAssociatedTokenAddress(owner);
     const [rolePda] = getRolePda(this.configPda, RoleType.Burner, burner);
     return this.program.methods
       .burn(amount)
@@ -245,7 +253,8 @@ export class BrowserStablecoin {
       .rpc();
   }
 
-  async freezeAccount(tokenAccount: PublicKey): Promise<TransactionSignature> {
+  async freezeAccount(walletAddress: PublicKey): Promise<TransactionSignature> {
+    const tokenAccount = this.getAssociatedTokenAddress(walletAddress);
     return this.program.methods
       .freezeAccount()
       .accounts({
@@ -258,7 +267,8 @@ export class BrowserStablecoin {
       .rpc();
   }
 
-  async thawAccount(tokenAccount: PublicKey): Promise<TransactionSignature> {
+  async thawAccount(walletAddress: PublicKey): Promise<TransactionSignature> {
+    const tokenAccount = this.getAssociatedTokenAddress(walletAddress);
     return this.program.methods
       .thawAccount()
       .accounts({
@@ -315,8 +325,24 @@ export class BrowserStablecoin {
       .rpc();
   }
 
+  async hasRole(role: RoleTypeValue, address?: PublicKey): Promise<boolean> {
+    const who = address ?? this.program.provider.publicKey!;
+    const [rolePda] = getRolePda(this.configPda, role, who);
+    try {
+      await this.program.account.roleAssignment.fetch(rolePda);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async addMinter(address: PublicKey, quota: BN): Promise<TransactionSignature> {
-    await this.addRole(address, RoleType.Minter);
+    try {
+      await this.addRole(address, RoleType.Minter);
+    } catch (err) {
+      const msg = (err as Error)?.message ?? String(err);
+      if (!msg.includes("0x1787") && !msg.includes("6023")) throw err;
+    }
     const [minterPda] = getMinterPda(this.configPda, address);
     return this.program.methods
       .updateMinter(address, { add: { quota } })
@@ -385,12 +411,14 @@ export class BrowserStablecoin {
   }
 
   async seize(
-    sourceTokenAccount: PublicKey,
-    treasuryTokenAccount: PublicKey,
+    sourceWallet: PublicKey,
+    treasuryWallet: PublicKey,
     amount: BN,
   ): Promise<TransactionSignature> {
     const seizer = this.program.provider.publicKey!;
     const [rolePda] = getRolePda(this.configPda, RoleType.Seizer, seizer);
+    const sourceTokenAccount = this.getAssociatedTokenAddress(sourceWallet);
+    const treasuryTokenAccount = this.getAssociatedTokenAddress(treasuryWallet);
     return this.program.methods
       .seize(amount)
       .accounts({

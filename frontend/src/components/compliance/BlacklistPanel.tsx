@@ -5,12 +5,16 @@ import { useTransactionToast } from "../../hooks/useTransactionToast";
 import { useToast } from "../../context/ToastContext";
 import { parseAnchorError } from "../../context/StablecoinContext";
 import { AddressInput } from "../shared/AddressInput";
+import { RoleBanner } from "../shared/RoleBanner";
+import { useRoleCheck } from "../../hooks/useRoleCheck";
+import { RoleType } from "../../lib/constants";
 import type { BlacklistState } from "../../lib/stablecoin";
 
 export const BlacklistPanel: FC = () => {
   const { stablecoin, state } = useStablecoinContext();
   const { execute } = useTransactionToast();
   const { addToast } = useToast();
+  const { hasRole, roleName } = useRoleCheck(RoleType.Blacklister);
   const [address, setAddress] = useState("");
   const [reason, setReason] = useState("");
   const [checkResult, setCheckResult] = useState<BlacklistState | null | undefined>(undefined);
@@ -42,6 +46,7 @@ export const BlacklistPanel: FC = () => {
   return (
     <div className="space-y-4">
       <p className="section-title">Blacklist Management</p>
+      {hasRole === false && <RoleBanner roleName={roleName} />}
       <form onSubmit={handleAdd} className="space-y-4">
         <AddressInput label="Address" value={address} onChange={(v) => { setAddress(v); setCheckResult(undefined); }} />
         <div>

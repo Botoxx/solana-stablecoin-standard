@@ -3,12 +3,16 @@ import { PublicKey } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useStablecoinContext } from "../../context/StablecoinContext";
 import { useTransactionToast } from "../../hooks/useTransactionToast";
+import { useRoleCheck } from "../../hooks/useRoleCheck";
 import { AddressInput } from "../shared/AddressInput";
 import { AmountInput } from "../shared/AmountInput";
+import { RoleBanner } from "../shared/RoleBanner";
+import { RoleType } from "../../lib/constants";
 
 export const BurnForm: FC = () => {
   const { stablecoin, state } = useStablecoinContext();
   const { execute } = useTransactionToast();
+  const { hasRole, roleName } = useRoleCheck(RoleType.Burner);
   const [tokenAccount, setTokenAccount] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -27,7 +31,8 @@ export const BurnForm: FC = () => {
         <div className="h-2 w-2 rounded-full bg-[var(--color-danger)]" />
         <h3 className="text-sm font-semibold text-slate-200">Burn</h3>
       </div>
-      <AddressInput label="Token Account (leave empty for your ATA)" value={tokenAccount} onChange={setTokenAccount} placeholder="Leave empty for default" />
+      {hasRole === false && <RoleBanner roleName={roleName} />}
+      <AddressInput label="Source Wallet (leave empty for yours)" value={tokenAccount} onChange={setTokenAccount} placeholder="Leave empty for your wallet" />
       <AmountInput label="Amount" value={amount} onChange={setAmount} />
       <button type="submit" disabled={!stablecoin || !amount} className="btn btn-danger w-full">
         Burn Tokens

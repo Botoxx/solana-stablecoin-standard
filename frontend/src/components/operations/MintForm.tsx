@@ -3,12 +3,16 @@ import { PublicKey } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useStablecoinContext } from "../../context/StablecoinContext";
 import { useTransactionToast } from "../../hooks/useTransactionToast";
+import { useRoleCheck } from "../../hooks/useRoleCheck";
 import { AddressInput } from "../shared/AddressInput";
 import { AmountInput } from "../shared/AmountInput";
+import { RoleBanner } from "../shared/RoleBanner";
+import { RoleType } from "../../lib/constants";
 
 export const MintForm: FC = () => {
   const { stablecoin, state } = useStablecoinContext();
   const { execute } = useTransactionToast();
+  const { hasRole, roleName } = useRoleCheck(RoleType.Minter);
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
 
@@ -26,7 +30,8 @@ export const MintForm: FC = () => {
         <div className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
         <h3 className="text-sm font-semibold text-slate-200">Mint</h3>
       </div>
-      <AddressInput label="Recipient Token Account" value={recipient} onChange={setRecipient} />
+      {hasRole === false && <RoleBanner roleName={roleName} />}
+      <AddressInput label="Recipient Wallet Address" value={recipient} onChange={setRecipient} />
       <AmountInput label="Amount" value={amount} onChange={setAmount} />
       <button type="submit" disabled={!stablecoin || !amount || !recipient} className="btn btn-primary w-full">
         Mint Tokens

@@ -1,10 +1,12 @@
-import { createContext, FC, ReactNode, useCallback, useContext, useState } from "react";
+import { createContext, FC, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { BrowserStablecoin, StablecoinState } from "../lib/stablecoin";
 import { usePrograms } from "../lib/program";
 import { useToast } from "./ToastContext";
 import { ERROR_MESSAGES } from "../lib/constants";
 import type { Preset, StablecoinExtensions } from "../lib/constants";
 import { PublicKey } from "@solana/web3.js";
+
+const STORAGE_KEY = "sss:configPda";
 
 interface StablecoinContextValue {
   stablecoin: BrowserStablecoin | null;
@@ -45,6 +47,30 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
   const [stablecoin, setStablecoin] = useState<BrowserStablecoin | null>(null);
   const [state, setState] = useState<StablecoinState | null>(null);
   const [loading, setLoading] = useState(false);
+  const restoredRef = useRef(false);
+
+  // Auto-restore from localStorage when programs become available
+  useEffect(() => {
+    if (!program || !hookProgram || restoredRef.current) return;
+    restoredRef.current = true;
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const configPda = new PublicKey(saved);
+      setLoading(true);
+      BrowserStablecoin.load(program, hookProgram, configPda)
+        .then(async (sc) => {
+          setStablecoin(sc);
+          setState(await sc.getState());
+        })
+        .catch(() => {
+          localStorage.removeItem(STORAGE_KEY);
+        })
+        .finally(() => setLoading(false));
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [program, hookProgram]);
 
   const refreshState = useCallback(async () => {
     if (!stablecoin) return;
@@ -67,6 +93,7 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
         const { stablecoin: sc, signature } = await BrowserStablecoin.create(program, hookProgram, params);
         setStablecoin(sc);
         setState(await sc.getState());
+        localStorage.setItem(STORAGE_KEY, sc.configPda.toBase58());
         updateToast(tid, { type: "success", message: "Stablecoin created", signature });
       } catch (err) {
         updateToast(tid, { type: "error", message: parseAnchorError(err) });
@@ -88,6 +115,7 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
         const sc = await BrowserStablecoin.load(program, hookProgram, configPda);
         setStablecoin(sc);
         setState(await sc.getState());
+        localStorage.setItem(STORAGE_KEY, configPda.toBase58());
         addToast("success", "Stablecoin loaded");
       } catch (err) {
         addToast("error", parseAnchorError(err));
@@ -101,6 +129,7 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
   const clearStablecoin = useCallback(() => {
     setStablecoin(null);
     setState(null);
+    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   return (

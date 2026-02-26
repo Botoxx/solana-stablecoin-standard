@@ -5,12 +5,16 @@ import { useStablecoinContext } from "../../context/StablecoinContext";
 import { useTransactionToast } from "../../hooks/useTransactionToast";
 import { AddressInput } from "../shared/AddressInput";
 import { AmountInput } from "../shared/AmountInput";
+import { RoleBanner } from "../shared/RoleBanner";
+import { useRoleCheck } from "../../hooks/useRoleCheck";
+import { RoleType } from "../../lib/constants";
 
 type Step = "input" | "confirm" | "done";
 
 export const SeizeFlow: FC = () => {
   const { stablecoin, state } = useStablecoinContext();
   const { execute } = useTransactionToast();
+  const { hasRole, roleName } = useRoleCheck(RoleType.Seizer);
   const [step, setStep] = useState<Step>("input");
   const [source, setSource] = useState("");
   const [amount, setAmount] = useState("");
@@ -20,11 +24,10 @@ export const SeizeFlow: FC = () => {
 
   const handleConfirm = async () => {
     if (!stablecoin || !state) return;
-    const treasuryAta = stablecoin.getAssociatedTokenAddress(state.treasury);
     const sig = await execute("Seizing tokens", () =>
       stablecoin.seize(
         new PublicKey(source),
-        treasuryAta,
+        state.treasury,
         new BN(Math.floor(parseFloat(amount) * 10 ** state.decimals)),
       ),
     );
@@ -44,6 +47,8 @@ export const SeizeFlow: FC = () => {
     <div className="space-y-4">
       <p className="section-title text-[var(--color-danger)]">Seize Tokens</p>
 
+      {hasRole === false && <RoleBanner roleName={roleName} />}
+
       {/* Step indicator */}
       <div className="flex items-center gap-1 text-[10px]">
         {steps.map((s, i) => (
@@ -59,7 +64,7 @@ export const SeizeFlow: FC = () => {
       {step === "input" && (
         <div className="space-y-4 animate-fade-in">
           <p className="text-xs text-slate-500">Target account must be frozen first.</p>
-          <AddressInput label="Source Token Account (frozen)" value={source} onChange={setSource} />
+          <AddressInput label="Source Wallet Address (must be frozen)" value={source} onChange={setSource} />
           <AmountInput label="Amount" value={amount} onChange={setAmount} />
           <button onClick={() => setStep("confirm")} disabled={!source || !amount} className="btn btn-danger w-full">
             Review Seizure

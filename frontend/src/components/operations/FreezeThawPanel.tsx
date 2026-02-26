@@ -25,7 +25,7 @@ export const FreezeThawPanel: FC = () => {
         <div className="h-2 w-2 rounded-full bg-[var(--color-info)]" />
         <h3 className="text-sm font-semibold text-slate-200">Freeze / Thaw</h3>
       </div>
-      <AddressInput label="Token Account" value={address} onChange={setAddress} />
+      <AddressInput label="Wallet Address" value={address} onChange={setAddress} />
       <div className="flex gap-2">
         <button onClick={handleFreeze} disabled={!stablecoin || !address} className="btn btn-ghost flex-1">
           Freeze

@@ -6,13 +6,16 @@ import { AddressInput } from "../shared/AddressInput";
 import { RoleType, ROLE_TYPE_NAMES } from "../../lib/constants";
 import type { RoleTypeValue } from "../../lib/constants";
 
-const ROLES = Object.entries(RoleType) as [string, RoleTypeValue][];
+// Minter role requires quota config — must use MinterManager instead
+const ROLES = (Object.entries(RoleType) as [string, RoleTypeValue][]).filter(
+  ([, val]) => val !== RoleType.Minter,
+);
 
 export const RoleManager: FC = () => {
   const { stablecoin } = useStablecoinContext();
   const { execute } = useTransactionToast();
   const [address, setAddress] = useState("");
-  const [role, setRole] = useState<RoleTypeValue>(RoleType.Minter);
+  const [role, setRole] = useState<RoleTypeValue>(RoleType.Burner);
 
   const handleAssign = async (e: FormEvent) => {
     e.preventDefault();

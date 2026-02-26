@@ -1,21 +1,28 @@
 import { FC, FormEvent, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useStablecoinContext } from "../../context/StablecoinContext";
+import { useToast } from "../../context/ToastContext";
 import { AddressInput } from "../shared/AddressInput";
 import { LoadingSpinner } from "../shared/LoadingSpinner";
 import { useNavigate } from "react-router-dom";
 
 export const LoadForm: FC = () => {
   const { loadStablecoin, loading } = useStablecoinContext();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const [configPda, setConfigPda] = useState("");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    let pda: PublicKey;
     try {
-      await loadStablecoin(new PublicKey(configPda));
-      navigate("/");
-    } catch { /* AddressInput validates */ }
+      pda = new PublicKey(configPda);
+    } catch {
+      addToast("error", "Invalid config PDA address");
+      return;
+    }
+    const success = await loadStablecoin(pda);
+    if (success) navigate("/");
   };
 
   return (

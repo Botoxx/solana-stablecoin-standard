@@ -46,7 +46,7 @@ vi.mock("../lib/constants", async (importOriginal) => {
   };
 });
 
-import { BrowserStablecoin } from "../lib/stablecoin";
+import { BrowserStablecoin, parseTokenAmount } from "../lib/stablecoin";
 import {
   getRolePda,
   RoleType,
@@ -375,5 +375,138 @@ describe("BrowserStablecoin", () => {
     expect((sc as any).program.account.roleAssignment.all).toHaveBeenCalledWith([
       { memcmp: { offset: 8, bytes: CONFIG.toBase58() } },
     ]);
+  });
+
+  /* ----- hasRole ----- */
+  it("hasRole: returns true when role account exists", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockResolvedValue({
+      config: CONFIG, roleType: RoleType.Minter, address: AUTHORITY,
+    });
+    expect(await sc.hasRole(RoleType.Minter)).toBe(true);
+  });
+
+  it("hasRole: returns false when account does not exist", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockRejectedValue(
+      new Error("Account does not exist"),
+    );
+    expect(await sc.hasRole(RoleType.Minter)).toBe(false);
+  });
+
+  it("hasRole: returns false for 'Could not find' error", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockRejectedValue(
+      new Error("Could not find"),
+    );
+    expect(await sc.hasRole(RoleType.Burner)).toBe(false);
+  });
+
+  it("hasRole: re-throws network errors instead of returning false", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockRejectedValue(
+      new Error("Network error"),
+    );
+    await expect(sc.hasRole(RoleType.Pauser)).rejects.toThrow("Network error");
+  });
+
+  it("hasRole: re-throws RPC rate limit errors", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockRejectedValue(
+      new Error("429 Too Many Requests"),
+    );
+    await expect(sc.hasRole(RoleType.Seizer)).rejects.toThrow("429 Too Many Requests");
+  });
+
+  it("hasRole: defaults to provider publicKey when no address given", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockResolvedValue({});
+    await sc.hasRole(RoleType.Blacklister);
+    expect(getRolePda).toHaveBeenCalledWith(CONFIG, RoleType.Blacklister, AUTHORITY);
+  });
+
+  it("hasRole: uses provided address when given", async () => {
+    vi.mocked((sc as any).program.account.roleAssignment.fetch).mockResolvedValue({});
+    await sc.hasRole(RoleType.Burner, TARGET);
+    expect(getRolePda).toHaveBeenCalledWith(CONFIG, RoleType.Burner, TARGET);
+  });
+
+  /* ----- addMinter error handling ----- */
+  it("addMinter: continues to updateMinter when addRole throws 0x1787 (already assigned)", async () => {
+    vi.spyOn(sc, "addRole").mockRejectedValue(
+      new Error("custom program error: 0x1787"),
+    );
+    const quota = new BN(500_000);
+    await sc.addMinter(TARGET, quota);
+
+    // addRole was called but failed with 0x1787 — should be swallowed
+    expect(sc.addRole).toHaveBeenCalledWith(TARGET, RoleType.Minter);
+    // updateMinter should still have been called
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("updateMinter");
+    expect(calls[0].args[1]).toEqual({ add: { quota } });
+  });
+
+  it("addMinter: continues to updateMinter when addRole throws error code 6023", async () => {
+    vi.spyOn(sc, "addRole").mockRejectedValue(
+      new Error("Error Code: 6023. Error Message: Role already assigned"),
+    );
+    await sc.addMinter(TARGET, new BN(100));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("updateMinter");
+  });
+
+  it("addMinter: re-throws non-role-already-assigned errors", async () => {
+    vi.spyOn(sc, "addRole").mockRejectedValue(
+      new Error("custom program error: 0x1770"),
+    );
+    await expect(sc.addMinter(TARGET, new BN(100))).rejects.toThrow("0x1770");
+    expect(calls).toHaveLength(0);
+  });
+});
+
+/* ================================================================== */
+/*  parseTokenAmount                                                    */
+/* ================================================================== */
+
+describe("parseTokenAmount", () => {
+  it("converts whole number with 6 decimals", () => {
+    expect(parseTokenAmount("100", 6).toString()).toBe("100000000");
+  });
+
+  it("converts decimal amount with 6 decimals", () => {
+    expect(parseTokenAmount("1.5", 6).toString()).toBe("1500000");
+  });
+
+  it("converts small fractional with 6 decimals", () => {
+    expect(parseTokenAmount("0.000001", 6).toString()).toBe("1");
+  });
+
+  it("truncates excess decimal places", () => {
+    expect(parseTokenAmount("1.1234567890", 6).toString()).toBe("1123456");
+  });
+
+  it("handles zero", () => {
+    expect(parseTokenAmount("0", 6).toString()).toBe("0");
+  });
+
+  it("handles decimals=0 (whole tokens)", () => {
+    expect(parseTokenAmount("42", 0).toString()).toBe("42");
+  });
+
+  it("preserves precision at 18 decimals (avoids float)", () => {
+    // This is the case that fails with parseFloat * 10^18
+    expect(parseTokenAmount("0.123456789012345678", 18).toString()).toBe("123456789012345678");
+  });
+
+  it("handles large whole + fraction at 18 decimals", () => {
+    expect(parseTokenAmount("999999999.999999999999999999", 18).toString()).toBe("999999999999999999999999999");
+  });
+
+  it("pads short fractional part", () => {
+    expect(parseTokenAmount("1.5", 18).toString()).toBe("1500000000000000000");
+  });
+
+  it("handles no decimal point", () => {
+    expect(parseTokenAmount("50", 9).toString()).toBe("50000000000");
+  });
+
+  it("handles empty-ish input gracefully", () => {
+    expect(parseTokenAmount("", 6).toString()).toBe("0");
   });
 });

@@ -28,10 +28,10 @@ export const BlacklistPanel: FC = () => {
     setReason("");
   };
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
     if (!stablecoin || !address) return;
-    execute("Removing from blacklist", () => stablecoin.blacklistRemove(new PublicKey(address)));
-    setCheckResult(undefined);
+    const sig = await execute("Removing from blacklist", () => stablecoin.blacklistRemove(new PublicKey(address)));
+    if (sig) setCheckResult(undefined);
   };
 
   const handleCheck = async () => {

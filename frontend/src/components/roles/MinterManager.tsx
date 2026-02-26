@@ -20,14 +20,14 @@ export const MinterManager: FC = () => {
     );
   };
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
     if (!stablecoin || !address) return;
-    execute("Removing minter", () => stablecoin.removeMinter(new PublicKey(address)));
+    await execute("Removing minter", () => stablecoin.removeMinter(new PublicKey(address)));
   };
 
-  const handleUpdateQuota = () => {
+  const handleUpdateQuota = async () => {
     if (!stablecoin || !address || !quota) return;
-    execute("Updating quota", () => stablecoin.updateMinterQuota(new PublicKey(address), new BN(quota)));
+    await execute("Updating quota", () => stablecoin.updateMinterQuota(new PublicKey(address), new BN(quota)));
   };
 
   return (

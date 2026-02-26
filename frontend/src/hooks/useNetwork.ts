@@ -12,8 +12,12 @@ const ENDPOINTS: Record<Network, string> = {
 const STORAGE_KEY = "sss-network";
 
 function loadNetwork(): Network {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "devnet" || stored === "mainnet-beta" || stored === "localnet") return stored;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "devnet" || stored === "mainnet-beta" || stored === "localnet") return stored;
+  } catch {
+    // localStorage unavailable (private browsing, storage quota)
+  }
   return "devnet";
 }
 
@@ -21,7 +25,7 @@ export function useNetwork() {
   const [network, setNetworkState] = useState<Network>(loadNetwork);
 
   const setNetwork = useCallback((n: Network) => {
-    localStorage.setItem(STORAGE_KEY, n);
+    try { localStorage.setItem(STORAGE_KEY, n); } catch { /* ignore storage errors */ }
     setNetworkState(n);
   }, []);
 

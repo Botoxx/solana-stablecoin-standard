@@ -1,5 +1,7 @@
 import { FC, useCallback, useEffect, useState } from "react";
 import { useStablecoinContext } from "../../context/StablecoinContext";
+import { parseAnchorError } from "../../context/StablecoinContext";
+import { useToast } from "../../context/ToastContext";
 import type { RoleState } from "../../lib/stablecoin";
 import { ROLE_TYPE_NAMES } from "../../lib/constants";
 import { PublicKey } from "@solana/web3.js";
@@ -8,15 +10,21 @@ function shortAddr(a: string) { return `${a.slice(0, 4)}...${a.slice(-4)}`; }
 
 export const RoleList: FC = () => {
   const { stablecoin } = useStablecoinContext();
+  const { addToast } = useToast();
   const [roles, setRoles] = useState<(RoleState & { publicKey: PublicKey })[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!stablecoin) return;
     setLoading(true);
-    try { setRoles(await stablecoin.getAllRoles()); } catch { /* ignore */ }
-    setLoading(false);
-  }, [stablecoin]);
+    try {
+      setRoles(await stablecoin.getAllRoles());
+    } catch (err) {
+      addToast("error", `Failed to load roles: ${parseAnchorError(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [stablecoin, addToast]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

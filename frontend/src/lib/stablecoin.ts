@@ -69,6 +69,14 @@ export interface BlacklistState {
   bump: number;
 }
 
+/** Parse a decimal string into raw token units without floating-point intermediates. */
+export function parseTokenAmount(input: string, decimals: number): BN {
+  const [whole = "0", frac = ""] = input.split(".");
+  const trimmedFrac = frac.slice(0, decimals).padEnd(decimals, "0");
+  const raw = whole + trimmedFrac;
+  return new BN(raw);
+}
+
 function isNotFound(err: unknown): boolean {
   const msg = (err as Error)?.message ?? String(err);
   return msg.includes("Account does not exist") || msg.includes("Could not find");
@@ -331,8 +339,9 @@ export class BrowserStablecoin {
     try {
       await this.program.account.roleAssignment.fetch(rolePda);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (isNotFound(err)) return false;
+      throw err;
     }
   }
 

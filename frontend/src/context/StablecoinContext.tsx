@@ -20,8 +20,8 @@ interface StablecoinContextValue {
     preset?: Preset;
     extensions?: Partial<StablecoinExtensions>;
     treasury?: PublicKey;
-  }) => Promise<void>;
-  loadStablecoin: (configPda: PublicKey) => Promise<void>;
+  }) => Promise<boolean>;
+  loadStablecoin: (configPda: PublicKey) => Promise<boolean>;
   refreshState: () => Promise<void>;
   clearStablecoin: () => void;
 }
@@ -55,22 +55,29 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
     restoredRef.current = true;
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
+    let configPda: PublicKey;
     try {
-      const configPda = new PublicKey(saved);
-      setLoading(true);
-      BrowserStablecoin.load(program, hookProgram, configPda)
-        .then(async (sc) => {
-          setStablecoin(sc);
-          setState(await sc.getState());
-        })
-        .catch(() => {
-          localStorage.removeItem(STORAGE_KEY);
-        })
-        .finally(() => setLoading(false));
+      configPda = new PublicKey(saved);
     } catch {
       localStorage.removeItem(STORAGE_KEY);
+      return;
     }
-  }, [program, hookProgram]);
+    setLoading(true);
+    BrowserStablecoin.load(program, hookProgram, configPda)
+      .then(async (sc) => {
+        setStablecoin(sc);
+        setState(await sc.getState());
+      })
+      .catch((err) => {
+        const msg = (err as Error)?.message ?? String(err);
+        if (msg.includes("Account does not exist") || msg.includes("Could not find")) {
+          localStorage.removeItem(STORAGE_KEY);
+        } else {
+          addToast("error", `Failed to restore session: ${parseAnchorError(err)}`);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [program, hookProgram, addToast]);
 
   const refreshState = useCallback(async () => {
     if (!stablecoin) return;
@@ -82,10 +89,10 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
   }, [stablecoin, addToast]);
 
   const createStablecoin = useCallback(
-    async (params: Parameters<StablecoinContextValue["createStablecoin"]>[0]) => {
+    async (params: Parameters<StablecoinContextValue["createStablecoin"]>[0]): Promise<boolean> => {
       if (!program || !hookProgram) {
         addToast("error", "Connect your wallet first");
-        return;
+        return false;
       }
       setLoading(true);
       const tid = addToast("loading", "Creating stablecoin...");
@@ -95,8 +102,10 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
         setState(await sc.getState());
         localStorage.setItem(STORAGE_KEY, sc.configPda.toBase58());
         updateToast(tid, { type: "success", message: "Stablecoin created", signature });
+        return true;
       } catch (err) {
         updateToast(tid, { type: "error", message: parseAnchorError(err) });
+        return false;
       } finally {
         setLoading(false);
       }
@@ -105,10 +114,10 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
   );
 
   const loadStablecoin = useCallback(
-    async (configPda: PublicKey) => {
+    async (configPda: PublicKey): Promise<boolean> => {
       if (!program || !hookProgram) {
         addToast("error", "Connect your wallet first");
-        return;
+        return false;
       }
       setLoading(true);
       try {
@@ -117,8 +126,10 @@ export const StablecoinProvider: FC<{ children: ReactNode }> = ({ children }) =>
         setState(await sc.getState());
         localStorage.setItem(STORAGE_KEY, configPda.toBase58());
         addToast("success", "Stablecoin loaded");
+        return true;
       } catch (err) {
         addToast("error", parseAnchorError(err));
+        return false;
       } finally {
         setLoading(false);
       }

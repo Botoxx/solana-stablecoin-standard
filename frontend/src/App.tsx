@@ -4,6 +4,7 @@ import { ToastProvider } from "./context/ToastContext";
 import { StablecoinProvider } from "./context/StablecoinContext";
 import { Layout } from "./components/layout/Layout";
 import { ToastContainer } from "./components/shared/Toast";
+import { ErrorBoundary } from "./components/shared/ErrorBoundary";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { CreateForm } from "./components/create/CreateForm";
 import { LoadForm } from "./components/load/LoadForm";
@@ -20,14 +21,16 @@ export default function App() {
       <ToastProvider network={network}>
         <StablecoinProvider>
           <Layout network={network} onNetworkChange={setNetwork}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/create" element={<CreateForm />} />
-              <Route path="/load" element={<LoadForm />} />
-              <Route path="/operations" element={<OperationsPage />} />
-              <Route path="/roles" element={<RolesPage />} />
-              <Route path="/compliance" element={<CompliancePage />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/create" element={<CreateForm />} />
+                <Route path="/load" element={<LoadForm />} />
+                <Route path="/operations" element={<OperationsPage />} />
+                <Route path="/roles" element={<RolesPage />} />
+                <Route path="/compliance" element={<CompliancePage />} />
+              </Routes>
+            </ErrorBoundary>
           </Layout>
           <ToastContainer />
         </StablecoinProvider>

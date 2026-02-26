@@ -1,6 +1,5 @@
 import { FC, FormEvent, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { BN } from "@coral-xyz/anchor";
 import { useStablecoinContext } from "../../context/StablecoinContext";
 import { useTransactionToast } from "../../hooks/useTransactionToast";
 import { useRoleCheck } from "../../hooks/useRoleCheck";
@@ -8,6 +7,7 @@ import { AddressInput } from "../shared/AddressInput";
 import { AmountInput } from "../shared/AmountInput";
 import { RoleBanner } from "../shared/RoleBanner";
 import { RoleType } from "../../lib/constants";
+import { parseTokenAmount } from "../../lib/stablecoin";
 
 export const MintForm: FC = () => {
   const { stablecoin, state } = useStablecoinContext();
@@ -19,7 +19,7 @@ export const MintForm: FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!stablecoin || !state) return;
-    const rawAmount = new BN(Math.floor(parseFloat(amount) * 10 ** state.decimals));
+    const rawAmount = parseTokenAmount(amount, state.decimals);
     await execute("Minting tokens", () => stablecoin.mint(new PublicKey(recipient), rawAmount));
     setAmount("");
   };

@@ -1,5 +1,7 @@
 import { FC, useCallback, useEffect, useState } from "react";
 import { useStablecoinContext } from "../../context/StablecoinContext";
+import { parseAnchorError } from "../../context/StablecoinContext";
+import { useToast } from "../../context/ToastContext";
 import type { MinterState } from "../../lib/stablecoin";
 import { BN } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
@@ -8,20 +10,26 @@ function shortAddr(a: string) { return `${a.slice(0, 4)}...${a.slice(-4)}`; }
 function formatBN(bn: BN): string { return bn.toString(); }
 function pct(remaining: BN, total: BN): number {
   if (total.isZero()) return 0;
-  return Math.round(remaining.toNumber() / total.toNumber() * 100);
+  return remaining.mul(new BN(100)).div(total).toNumber();
 }
 
 export const MinterList: FC = () => {
   const { stablecoin } = useStablecoinContext();
+  const { addToast } = useToast();
   const [minters, setMinters] = useState<(MinterState & { publicKey: PublicKey })[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!stablecoin) return;
     setLoading(true);
-    try { setMinters(await stablecoin.getAllMinters()); } catch { /* ignore */ }
-    setLoading(false);
-  }, [stablecoin]);
+    try {
+      setMinters(await stablecoin.getAllMinters());
+    } catch (err) {
+      addToast("error", `Failed to load minters: ${parseAnchorError(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [stablecoin, addToast]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

@@ -18,10 +18,15 @@ export const WalletProvider: FC<{ endpoint: string; children: ReactNode }> = ({
 
   useEffect(() => {
     if (!isE2E) return;
-    import("./TestWalletAdapter").then(({ TestWalletAdapter }) => {
-      setE2eWallets([new TestWalletAdapter()]);
-      setE2eReady(true);
-    });
+    import("./TestWalletAdapter")
+      .then(({ TestWalletAdapter }) => {
+        setE2eWallets([new TestWalletAdapter()]);
+        setE2eReady(true);
+      })
+      .catch((err) => {
+        console.error("Failed to load E2E test wallet adapter:", err);
+        setE2eReady(true);
+      });
   }, []);
 
   const prodWallets = useMemo(

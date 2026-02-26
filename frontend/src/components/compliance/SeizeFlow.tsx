@@ -1,6 +1,5 @@
 import { FC, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { BN } from "@coral-xyz/anchor";
 import { useStablecoinContext } from "../../context/StablecoinContext";
 import { useTransactionToast } from "../../hooks/useTransactionToast";
 import { AddressInput } from "../shared/AddressInput";
@@ -8,6 +7,7 @@ import { AmountInput } from "../shared/AmountInput";
 import { RoleBanner } from "../shared/RoleBanner";
 import { useRoleCheck } from "../../hooks/useRoleCheck";
 import { RoleType } from "../../lib/constants";
+import { parseTokenAmount } from "../../lib/stablecoin";
 
 type Step = "input" | "confirm" | "done";
 
@@ -28,7 +28,7 @@ export const SeizeFlow: FC = () => {
       stablecoin.seize(
         new PublicKey(source),
         state.treasury,
-        new BN(Math.floor(parseFloat(amount) * 10 ** state.decimals)),
+        parseTokenAmount(amount, state.decimals),
       ),
     );
     if (sig) {

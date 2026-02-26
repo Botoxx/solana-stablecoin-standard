@@ -9,14 +9,14 @@ export const FreezeThawPanel: FC = () => {
   const { execute } = useTransactionToast();
   const [address, setAddress] = useState("");
 
-  const handleFreeze = () => {
+  const handleFreeze = async () => {
     if (!stablecoin || !address) return;
-    execute("Freezing account", () => stablecoin.freezeAccount(new PublicKey(address)));
+    await execute("Freezing account", () => stablecoin.freezeAccount(new PublicKey(address)));
   };
 
-  const handleThaw = () => {
+  const handleThaw = async () => {
     if (!stablecoin || !address) return;
-    execute("Thawing account", () => stablecoin.thawAccount(new PublicKey(address)));
+    await execute("Thawing account", () => stablecoin.thawAccount(new PublicKey(address)));
   };
 
   return (

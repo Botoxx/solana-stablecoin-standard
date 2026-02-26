@@ -20,7 +20,7 @@ export const CreateForm: FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    await createStablecoin({
+    const success = await createStablecoin({
       name,
       symbol,
       uri: uri || undefined,
@@ -28,7 +28,7 @@ export const CreateForm: FC = () => {
       preset,
       treasury: treasury ? new PublicKey(treasury) : undefined,
     });
-    navigate("/");
+    if (success) navigate("/");
   };
 
   return (

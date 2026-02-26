@@ -23,20 +23,14 @@ export const BurnForm: FC = () => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <h3 className="text-sm font-semibold text-slate-300">Burn Tokens</h3>
-      <AddressInput
-        label="Token Account (leave empty for your ATA)"
-        value={tokenAccount}
-        onChange={setTokenAccount}
-        placeholder="Leave empty for default"
-      />
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-2 rounded-full bg-[var(--color-danger)]" />
+        <h3 className="text-sm font-semibold text-slate-200">Burn</h3>
+      </div>
+      <AddressInput label="Token Account (leave empty for your ATA)" value={tokenAccount} onChange={setTokenAccount} placeholder="Leave empty for default" />
       <AmountInput label="Amount" value={amount} onChange={setAmount} />
-      <button
-        type="submit"
-        disabled={!stablecoin || !amount}
-        className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
-      >
-        Burn
+      <button type="submit" disabled={!stablecoin || !amount} className="btn btn-danger w-full">
+        Burn Tokens
       </button>
     </form>
   );

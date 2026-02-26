@@ -15,28 +15,21 @@ export const MintForm: FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!stablecoin || !state) return;
-    const decimals = state.decimals;
-    const rawAmount = new BN(Math.floor(parseFloat(amount) * 10 ** decimals));
-    const recipientPk = new PublicKey(recipient);
-    await execute("Minting tokens", () => stablecoin.mint(recipientPk, rawAmount));
+    const rawAmount = new BN(Math.floor(parseFloat(amount) * 10 ** state.decimals));
+    await execute("Minting tokens", () => stablecoin.mint(new PublicKey(recipient), rawAmount));
     setAmount("");
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <h3 className="text-sm font-semibold text-slate-300">Mint Tokens</h3>
-      <AddressInput
-        label="Recipient Token Account"
-        value={recipient}
-        onChange={setRecipient}
-      />
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
+        <h3 className="text-sm font-semibold text-slate-200">Mint</h3>
+      </div>
+      <AddressInput label="Recipient Token Account" value={recipient} onChange={setRecipient} />
       <AmountInput label="Amount" value={amount} onChange={setAmount} />
-      <button
-        type="submit"
-        disabled={!stablecoin || !amount || !recipient}
-        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-      >
-        Mint
+      <button type="submit" disabled={!stablecoin || !amount || !recipient} className="btn btn-primary w-full">
+        Mint Tokens
       </button>
     </form>
   );

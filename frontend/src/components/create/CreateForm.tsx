@@ -32,74 +32,48 @@ export const CreateForm: FC = () => {
   };
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-xl font-semibold">Create Stablecoin</h1>
+    <div className="mx-auto max-w-2xl space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-semibold text-slate-100">Create Stablecoin</h1>
+        <p className="mt-1 text-sm text-slate-500">Deploy a new stablecoin with Token-2022 extensions</p>
+      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <PresetSelector value={preset} onChange={setPreset} />
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">Name</label>
-            <input
-              required
-              maxLength={32}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My USD"
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-emerald-500"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">Symbol</label>
-            <input
-              required
-              maxLength={10}
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              placeholder="MUSD"
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-emerald-500"
-            />
-          </div>
-        </div>
-
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-400">URI (optional)</label>
-          <input
-            maxLength={200}
-            value={uri}
-            onChange={(e) => setUri(e.target.value)}
-            placeholder="https://..."
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-emerald-500"
-          />
+          <p className="section-title mb-3">Preset</p>
+          <PresetSelector value={preset} onChange={setPreset} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">Decimals</label>
-            <input
-              type="number"
-              min={0}
-              max={18}
-              value={decimals}
-              onChange={(e) => setDecimals(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
-            />
+        <div className="card space-y-4">
+          <p className="section-title">Token Metadata</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Name</label>
+              <input required maxLength={32} value={name} onChange={(e) => setName(e.target.value)} placeholder="My USD" className="input" />
+            </div>
+            <div>
+              <label className="label">Symbol</label>
+              <input required maxLength={10} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="MUSD" className="input" />
+            </div>
           </div>
-          <div />
+          <div>
+            <label className="label">URI (optional)</label>
+            <input maxLength={200} value={uri} onChange={(e) => setUri(e.target.value)} placeholder="https://..." className="input" />
+          </div>
+          <div className="w-32">
+            <label className="label">Decimals</label>
+            <input type="number" min={0} max={18} value={decimals} onChange={(e) => setDecimals(e.target.value)} className="input font-mono text-center" />
+          </div>
         </div>
 
-        <AddressInput
-          label="Treasury (defaults to your wallet)"
-          value={treasury}
-          onChange={setTreasury}
-          placeholder="Leave empty for your wallet"
-        />
+        <div className="card">
+          <AddressInput label="Treasury (defaults to your wallet)" value={treasury} onChange={setTreasury} placeholder="Leave empty for your wallet" />
+        </div>
 
         <button
           type="submit"
           disabled={loading || !name || !symbol}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn btn-primary w-full py-3"
         >
           {loading && <LoadingSpinner className="h-4 w-4" />}
           Create Stablecoin

@@ -13,29 +13,22 @@ export const LoadForm: FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const pk = new PublicKey(configPda);
-      await loadStablecoin(pk);
+      await loadStablecoin(new PublicKey(configPda));
       navigate("/");
-    } catch {
-      // AddressInput already validates
-    }
+    } catch { /* AddressInput validates */ }
   };
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-xl font-semibold">Load Stablecoin</h1>
+    <div className="mx-auto max-w-xl space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-semibold text-slate-100">Load Stablecoin</h1>
+        <p className="mt-1 text-sm text-slate-500">Connect to an existing stablecoin by its config address</p>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-5">
-        <AddressInput
-          label="Config PDA Address"
-          value={configPda}
-          onChange={setConfigPda}
-          placeholder="Paste the config PDA..."
-        />
-        <button
-          type="submit"
-          disabled={loading || !configPda}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <div className="card">
+          <AddressInput label="Config PDA Address" value={configPda} onChange={setConfigPda} placeholder="Paste the config PDA..." />
+        </div>
+        <button type="submit" disabled={loading || !configPda} className="btn btn-primary w-full py-3">
           {loading && <LoadingSpinner className="h-4 w-4" />}
           Load
         </button>

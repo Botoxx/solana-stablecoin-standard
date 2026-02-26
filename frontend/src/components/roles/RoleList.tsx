@@ -14,9 +14,7 @@ export const RoleList: FC = () => {
   const refresh = useCallback(async () => {
     if (!stablecoin) return;
     setLoading(true);
-    try {
-      setRoles(await stablecoin.getAllRoles());
-    } catch { /* ignore */ }
+    try { setRoles(await stablecoin.getAllRoles()); } catch { /* ignore */ }
     setLoading(false);
   }, [stablecoin]);
 
@@ -27,31 +25,31 @@ export const RoleList: FC = () => {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-300">Role Assignments</h3>
-        <button onClick={refresh} className="text-xs text-slate-500 hover:text-slate-300">Refresh</button>
+        <p className="section-title">Role Assignments</p>
+        <button onClick={refresh} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Refresh</button>
       </div>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading...</p>
+        <p className="text-xs text-slate-500 animate-pulse-subtle">Loading...</p>
       ) : roles.length === 0 ? (
-        <p className="text-xs text-slate-500">No roles assigned</p>
+        <p className="text-xs text-slate-500 py-4 text-center">No roles assigned</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-slate-700 text-left text-slate-500">
-                <th className="pb-2 pr-4 font-medium">Address</th>
-                <th className="pb-2 pr-4 font-medium">Role</th>
-                <th className="pb-2 font-medium">Assigned By</th>
+              <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-base)]">
+                <th className="px-3 py-2.5 text-left font-medium text-slate-500">Address</th>
+                <th className="px-3 py-2.5 text-left font-medium text-slate-500">Role</th>
+                <th className="px-3 py-2.5 text-left font-medium text-slate-500">Assigned By</th>
               </tr>
             </thead>
             <tbody>
               {roles.map((r) => (
-                <tr key={r.publicKey.toBase58()} className="border-b border-slate-800">
-                  <td className="py-2 pr-4 font-mono text-slate-300">{shortAddr(r.address.toBase58())}</td>
-                  <td className="py-2 pr-4 capitalize text-slate-300">
-                    {ROLE_TYPE_NAMES[r.roleType] ?? `Unknown(${r.roleType})`}
+                <tr key={r.publicKey.toBase58()} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-surface)] transition-colors">
+                  <td className="px-3 py-2.5 mono-data">{shortAddr(r.address.toBase58())}</td>
+                  <td className="px-3 py-2.5">
+                    <span className="pill pill-neutral capitalize">{ROLE_TYPE_NAMES[r.roleType] ?? `Unknown(${r.roleType})`}</span>
                   </td>
-                  <td className="py-2 font-mono text-slate-500">{shortAddr(r.assignedBy.toBase58())}</td>
+                  <td className="px-3 py-2.5 mono-data text-slate-500">{shortAddr(r.assignedBy.toBase58())}</td>
                 </tr>
               ))}
             </tbody>

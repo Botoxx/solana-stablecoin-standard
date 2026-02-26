@@ -34,53 +34,61 @@ export const SeizeFlow: FC = () => {
     }
   };
 
-  const reset = () => {
-    setStep("input");
-    setSource("");
-    setAmount("");
-    setSignature("");
-  };
+  const reset = () => { setStep("input"); setSource(""); setAmount(""); setSignature(""); };
+
+  // Step indicator
+  const steps = ["Source", "Confirm", "Done"];
+  const stepIndex = step === "input" ? 0 : step === "confirm" ? 1 : 2;
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-rose-400">Seize Tokens</h3>
-      <p className="text-xs text-slate-500">
-        Seize tokens from a frozen account to the treasury. The account must be frozen first.
-      </p>
+      <p className="section-title text-[var(--color-danger)]">Seize Tokens</p>
+
+      {/* Step indicator */}
+      <div className="flex items-center gap-1 text-[10px]">
+        {steps.map((s, i) => (
+          <div key={s} className="flex items-center gap-1">
+            {i > 0 && <div className={`h-px w-4 ${i <= stepIndex ? "bg-[var(--color-danger)]" : "bg-[var(--color-border)]"}`} />}
+            <span className={`rounded-full px-2 py-0.5 font-medium ${
+              i <= stepIndex ? "bg-[var(--color-danger)]/10 text-[var(--color-danger)]" : "bg-[var(--color-bg-surface)] text-slate-500"
+            }`}>{s}</span>
+          </div>
+        ))}
+      </div>
 
       {step === "input" && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-fade-in">
+          <p className="text-xs text-slate-500">Target account must be frozen first.</p>
           <AddressInput label="Source Token Account (frozen)" value={source} onChange={setSource} />
           <AmountInput label="Amount" value={amount} onChange={setAmount} />
-          <button
-            onClick={() => setStep("confirm")}
-            disabled={!source || !amount}
-            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500 disabled:opacity-50"
-          >
-            Review
+          <button onClick={() => setStep("confirm")} disabled={!source || !amount} className="btn btn-danger w-full">
+            Review Seizure
           </button>
         </div>
       )}
 
       {step === "confirm" && (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 space-y-3">
-          <p className="text-sm font-medium text-rose-300">Confirm Seizure</p>
-          <div className="text-xs text-slate-400 space-y-1">
-            <p>Source: <span className="font-mono text-slate-300">{source.slice(0, 8)}...</span></p>
-            <p>Amount: <span className="text-slate-300">{amount}</span></p>
-            <p>Treasury: <span className="font-mono text-slate-300">{state?.treasury.toBase58().slice(0, 8)}...</span></p>
+        <div className="rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/[0.03] p-4 space-y-4 animate-slide-up">
+          <p className="text-sm font-medium text-[var(--color-danger)]">Confirm Seizure</p>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between border-b border-[var(--color-border)] pb-2">
+              <span className="text-slate-500">Source</span>
+              <span className="mono-data">{source.slice(0, 12)}...</span>
+            </div>
+            <div className="flex justify-between border-b border-[var(--color-border)] pb-2">
+              <span className="text-slate-500">Amount</span>
+              <span className="mono-data">{amount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Treasury</span>
+              <span className="mono-data">{state?.treasury.toBase58().slice(0, 12)}...</span>
+            </div>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={handleConfirm}
-              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-500"
-            >
+            <button onClick={handleConfirm} className="btn btn-danger flex-1">
               Confirm Seize
             </button>
-            <button
-              onClick={() => setStep("input")}
-              className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
-            >
+            <button onClick={() => setStep("input")} className="btn btn-ghost flex-1">
               Back
             </button>
           </div>
@@ -88,15 +96,17 @@ export const SeizeFlow: FC = () => {
       )}
 
       {step === "done" && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
-          <p className="text-sm font-medium text-emerald-400">Seizure Complete</p>
-          <p className="text-xs text-slate-400">
-            Signature: <span className="font-mono text-slate-300">{signature.slice(0, 16)}...</span>
+        <div className="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/[0.03] p-4 space-y-3 animate-slide-up">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-[var(--color-accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <p className="text-sm font-medium text-[var(--color-accent)]">Seizure Complete</p>
+          </div>
+          <p className="mono-data text-slate-400">
+            {signature.slice(0, 24)}...
           </p>
-          <button
-            onClick={reset}
-            className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
-          >
+          <button onClick={reset} className="btn btn-ghost text-xs">
             New Seizure
           </button>
         </div>

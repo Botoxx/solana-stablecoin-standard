@@ -1,0 +1,33 @@
+[package]
+name = "sss-tui"
+version = "0.1.0"
+edition = "2021"
+description = "Interactive terminal UI for SSS stablecoin administration"
+
+[[bin]]
+name = "sss-tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.29"
+solana-sdk = "2"
+solana-client = "2"
+solana-account-decoder = "2"
+solana-pubsub-client = "2"
+borsh = "0.10"
+tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"
+chrono = "0.4"
+dirs = "6"
+bs58 = "0.5"
+base64 = "0.22"
+futures-util = "0.3"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

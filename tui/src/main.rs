@@ -107,8 +107,7 @@ async fn run() -> error::Result<()> {
 
     let mut rx = event_loop.rx;
     let tx = event_loop.tx.clone();
-
-    let cancel = event_loop.cancel.clone();
+    let stop = event_loop.stop.clone();
 
     // Main loop
     while app.running {
@@ -177,11 +176,14 @@ async fn run() -> error::Result<()> {
         }
     }
 
-    // Cancel all background tasks, save config, restore terminal
-    cancel.cancel();
+    // Signal all background tasks to stop, save config, restore terminal
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
     let _ = cfg.save();
     tui_backend::restore()?;
-    Ok(())
+
+    // Force exit — spawn_blocking threads can't be joined from async context
+    // and would keep the tokio runtime alive. Terminal is already restored.
+    std::process::exit(0);
 }
 
 fn handle_key(

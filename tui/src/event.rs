@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 use crate::accounts::StablecoinConfig;
 use crate::events::EventData;
@@ -40,7 +39,8 @@ pub struct RpcData {
 pub struct EventLoop {
     pub tx: mpsc::UnboundedSender<AppEvent>,
     pub rx: mpsc::UnboundedReceiver<AppEvent>,
-    pub cancel: CancellationToken,
+    /// Set to true to stop the crossterm polling thread.
+    pub stop: Arc<AtomicBool>,
 }
 
 impl EventLoop {
@@ -49,23 +49,14 @@ impl EventLoop {
         Self {
             tx,
             rx,
-            cancel: CancellationToken::new(),
+            stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Spawn the crossterm event reader (blocking → spawn_blocking).
-    /// Uses an AtomicBool so the blocking thread can check for cancellation.
     pub fn spawn_crossterm(&self) {
         let tx = self.tx.clone();
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop2 = stop.clone();
-        let cancel = self.cancel.clone();
-
-        // Watch cancellation token and set the atomic flag
-        tokio::spawn(async move {
-            cancel.cancelled().await;
-            stop2.store(true, Ordering::Relaxed);
-        });
+        let stop = self.stop.clone();
 
         tokio::task::spawn_blocking(move || loop {
             if stop.load(Ordering::Relaxed) {
@@ -89,17 +80,16 @@ impl EventLoop {
     /// Spawn the tick timer.
     pub fn spawn_tick(&self, interval: Duration) {
         let tx = self.tx.clone();
-        let cancel = self.cancel.clone();
+        let stop = self.stop.clone();
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => break,
-                    _ = ticker.tick() => {
-                        if tx.send(AppEvent::Tick).is_err() {
-                            break;
-                        }
-                    }
+                ticker.tick().await;
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                if tx.send(AppEvent::Tick).is_err() {
+                    break;
                 }
             }
         });

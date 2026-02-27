@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;
 
-use sss_tui::accounts::{BlacklistEntry, RoleAssignment, StablecoinConfig};
+use sss_tui::accounts::{BlacklistEntry, MinterConfig, RoleAssignment, StablecoinConfig};
 use sss_tui::app::{App, ConfirmAction, InputMode, OpsTab, RolesTab, Screen};
 use sss_tui::config::TuiConfig;
 use sss_tui::event::AppEvent;
@@ -574,6 +574,66 @@ fn test_compliance_d_remove_active_blacklist() {
     }
 }
 
+#[test]
+fn test_compliance_d_inactive_shows_toast() {
+    let mut app = App::new();
+    app.screen = Screen::Compliance;
+    app.blacklist = vec![BlacklistEntry {
+        config: Pubkey::new_from_array([1; 32]),
+        address: Pubkey::new_from_array([30; 32]),
+        reason: "OFAC".into(),
+        blacklisted_at: 1700000000,
+        blacklisted_by: Pubkey::new_from_array([1; 32]),
+        active: false,
+        bump: 255,
+    }];
+    app.compliance_selected = 0;
+
+    send_key(&mut app, KeyCode::Char('d'));
+    assert!(app.confirm.is_none()); // no confirm for inactive
+    assert!(app.toast.is_some());
+    assert!(app.toast.as_ref().unwrap().is_error);
+}
+
+#[test]
+fn test_compliance_d_empty_shows_toast() {
+    let mut app = App::new();
+    app.screen = Screen::Compliance;
+    // empty blacklist
+
+    send_key(&mut app, KeyCode::Char('d'));
+    assert!(app.confirm.is_none());
+    assert!(app.toast.is_some());
+    assert!(app.toast.as_ref().unwrap().is_error);
+}
+
+#[test]
+fn test_roles_d_removes_minter() {
+    let mut app = App::new();
+    app.screen = Screen::Roles;
+    app.roles_tab = RolesTab::Minters;
+    let addr = Pubkey::new_from_array([40; 32]);
+    app.minters = vec![MinterConfig {
+        config: Pubkey::new_from_array([1; 32]),
+        minter: addr,
+        quota_total: 1000,
+        quota_remaining: 500,
+        bump: 255,
+    }];
+    app.roles_selected = 0;
+
+    send_key(&mut app, KeyCode::Char('d'));
+    assert!(app.confirm.is_some());
+    let dialog = app.confirm.as_ref().unwrap();
+    assert_eq!(dialog.title, "Remove Minter");
+    match &dialog.on_confirm {
+        ConfirmAction::RemoveMinter { address } => {
+            assert_eq!(*address, addr.to_string());
+        }
+        _ => panic!("Expected RemoveMinter"),
+    }
+}
+
 // ---- Events screen tests ----
 
 #[test]
@@ -719,13 +779,24 @@ fn test_is_valid_amount() {
 
 #[test]
 fn test_compliance_tab_cycles_fields_in_edit() {
+    use sss_tui::app::ComplianceMode;
+
+    // Blacklist mode: 0 (address) ↔ 1 (reason)
     let mut app = App::new();
     app.screen = Screen::Compliance;
     app.input_mode = InputMode::Editing;
+    app.compliance_mode = ComplianceMode::Blacklist;
     app.compliance_focus = 0;
 
     send_key(&mut app, KeyCode::Tab);
     assert_eq!(app.compliance_focus, 1);
+
+    send_key(&mut app, KeyCode::Tab);
+    assert_eq!(app.compliance_focus, 0); // wraps
+
+    // Seize mode: 0 (address) ↔ 2 (amount)
+    app.compliance_mode = ComplianceMode::Seize;
+    app.compliance_focus = 0;
 
     send_key(&mut app, KeyCode::Tab);
     assert_eq!(app.compliance_focus, 2);

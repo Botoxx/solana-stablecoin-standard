@@ -144,6 +144,13 @@ impl OpsTab {
     }
 }
 
+/// Compliance editing mode (blacklist-add vs seize).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComplianceMode {
+    Blacklist,
+    Seize,
+}
+
 /// Roles sub-tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RolesTab {
@@ -190,6 +197,7 @@ pub struct App {
     pub compliance_fields: Vec<String>,
     pub compliance_focus: usize,
     pub compliance_selected: usize,
+    pub compliance_mode: ComplianceMode,
 
     // Events screen
     pub events_scroll: usize,
@@ -233,6 +241,7 @@ impl App {
             compliance_fields: vec![String::new(); 3], // address, reason, seize_amount
             compliance_focus: 0,
             compliance_selected: 0,
+            compliance_mode: ComplianceMode::Blacklist,
             events_scroll: 0,
             events_auto_scroll: true,
             events_filter: None,

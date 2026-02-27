@@ -279,13 +279,9 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
             app.input_mode = InputMode::Editing;
         }
         KeyCode::Char('d') => {
-            // Revoke selected role
             if app.roles_tab == RolesTab::Roles {
+                // Revoke selected role
                 if let Some(role) = app.roles.get(app.roles_selected) {
-                    let action = ConfirmAction::RevokeRole {
-                        address: role.address.to_string(),
-                        role_type: role.role_type,
-                    };
                     app.confirm = Some(ConfirmDialog {
                         title: "Revoke Role".into(),
                         body: format!(
@@ -293,7 +289,25 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
                             role_name(role.role_type),
                             theme::truncate_pubkey(&role.address.to_string(), 6)
                         ),
-                        on_confirm: action,
+                        on_confirm: ConfirmAction::RevokeRole {
+                            address: role.address.to_string(),
+                            role_type: role.role_type,
+                        },
+                        selected: true,
+                    });
+                }
+            } else if app.roles_tab == RolesTab::Minters {
+                // Remove selected minter
+                if let Some(minter) = app.minters.get(app.roles_selected) {
+                    app.confirm = Some(ConfirmDialog {
+                        title: "Remove Minter".into(),
+                        body: format!(
+                            "Remove minter {}",
+                            theme::truncate_pubkey(&minter.minter.to_string(), 6)
+                        ),
+                        on_confirm: ConfirmAction::RemoveMinter {
+                            address: minter.minter.to_string(),
+                        },
                         selected: true,
                     });
                 }

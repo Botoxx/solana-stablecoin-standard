@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, ConfirmAction, ConfirmDialog, InputMode, Toast};
+use crate::app::{App, ComplianceMode, ConfirmAction, ConfirmDialog, InputMode, Toast};
 use crate::theme;
 use crate::widgets::input_field;
 
@@ -109,26 +109,20 @@ fn render_blacklist_table(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
-    // Determine if we're in blacklist-add mode (focus cycles 0→1→2, field 1 = reason)
-    // vs seize mode (focus cycles 0→1→2, field 2 = amount)
-    let is_blacklist_edit = app.input_mode == InputMode::Editing
-        && app
-            .compliance_fields
-            .get(2)
-            .map(|s| s.is_empty())
-            .unwrap_or(true)
-        && (app.compliance_focus == 0 || app.compliance_focus == 1);
+    let is_blacklist = app.compliance_mode == ComplianceMode::Blacklist;
 
-    let title = if is_blacklist_edit {
+    let title = if app.input_mode.is_editing() && is_blacklist {
         " Add to Blacklist "
-    } else {
+    } else if app.input_mode.is_editing() {
         " Seize Tokens "
+    } else {
+        " Actions "
     };
 
     let block = Block::default()
         .title(Span::styled(title, theme::bold()))
         .borders(Borders::ALL)
-        .border_style(if app.input_mode == InputMode::Editing {
+        .border_style(if app.input_mode.is_editing() {
             theme::accent()
         } else {
             theme::border()
@@ -174,12 +168,12 @@ fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
         f,
         wallet,
         "Address",
-        app.compliance_focus == 0 && app.input_mode == InputMode::Editing,
+        app.compliance_focus == 0 && app.input_mode.is_editing(),
         input_field::is_valid_pubkey(wallet),
         fields[0],
     );
 
-    if is_blacklist_edit {
+    if is_blacklist {
         let reason = app
             .compliance_fields
             .get(1)
@@ -189,7 +183,7 @@ fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
             f,
             reason,
             "Reason",
-            app.compliance_focus == 1 && app.input_mode == InputMode::Editing,
+            app.compliance_focus == 1 && app.input_mode.is_editing(),
             !reason.is_empty() || app.compliance_focus != 1,
             fields[1],
         );
@@ -203,13 +197,13 @@ fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
             f,
             amount,
             "Amount to Seize",
-            app.compliance_focus == 2 && app.input_mode == InputMode::Editing,
+            app.compliance_focus == 2 && app.input_mode.is_editing(),
             input_field::is_valid_amount(amount),
             fields[1],
         );
     }
 
-    let hint = if app.input_mode == InputMode::Editing {
+    let hint = if app.input_mode.is_editing() {
         "Tab: next | Enter: submit | Esc: cancel"
     } else {
         "s: seize | a: add blacklist | d: remove blacklist | j/k: navigate"
@@ -224,13 +218,13 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
     if app.input_mode == InputMode::Editing {
         match key.code {
             KeyCode::Tab => {
-                // Toggle between field 0 (wallet) and 2 (amount) for seize
-                // or 0 (address) and 1 (reason) for blacklist
-                app.compliance_focus = match app.compliance_focus {
-                    0 => 1,
-                    1 => 2,
-                    _ => 0,
-                };
+                // Blacklist: toggle 0 (address) ↔ 1 (reason)
+                // Seize: toggle 0 (address) ↔ 2 (amount)
+                if app.compliance_mode == ComplianceMode::Blacklist {
+                    app.compliance_focus = if app.compliance_focus == 0 { 1 } else { 0 };
+                } else {
+                    app.compliance_focus = if app.compliance_focus == 0 { 2 } else { 0 };
+                }
             }
             KeyCode::Enter => submit_compliance_action(app),
             other => {
@@ -256,6 +250,7 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
             // Add to blacklist: enter address + reason
             app.compliance_fields = vec![String::new(); 3];
             app.compliance_focus = 0;
+            app.compliance_mode = ComplianceMode::Blacklist;
             app.input_mode = InputMode::Editing;
         }
         KeyCode::Char('d') => {
@@ -273,13 +268,18 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
                         },
                         selected: true,
                     });
+                } else {
+                    app.set_toast(Toast::error("Entry already inactive"));
                 }
+            } else {
+                app.set_toast(Toast::error("No entry selected"));
             }
         }
         KeyCode::Char('s') => {
             // Seize flow: edit wallet + amount
             app.compliance_fields = vec![String::new(); 3];
             app.compliance_focus = 0;
+            app.compliance_mode = ComplianceMode::Seize;
             app.input_mode = InputMode::Editing;
         }
         _ => {}

@@ -49,6 +49,12 @@ pub enum InputMode {
     Editing,
 }
 
+impl InputMode {
+    pub fn is_editing(&self) -> bool {
+        matches!(self, InputMode::Editing)
+    }
+}
+
 /// Toast notification.
 #[derive(Debug, Clone)]
 pub struct Toast {

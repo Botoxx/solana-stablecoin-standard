@@ -12,6 +12,21 @@ use crate::theme;
 use crate::widgets::{input_field, quota_bar};
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
+    if app.input_mode == InputMode::Editing {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        render_edit_form(f, app, chunks[0]);
+        if app.roles_tab == RolesTab::Minters {
+            render_minters_table(f, app, chunks[1]);
+        } else {
+            render_roles_table(f, app, chunks[1]);
+        }
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -19,6 +34,78 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     render_roles_table(f, app, chunks[0]);
     render_minters_table(f, app, chunks[1]);
+}
+
+fn render_edit_form(f: &mut Frame, app: &App, area: Rect) {
+    let title = if app.roles_tab == RolesTab::Minters {
+        " Add Minter "
+    } else {
+        " Assign Role "
+    };
+
+    let block = Block::default()
+        .title(Span::styled(title, theme::bold()))
+        .borders(Borders::ALL)
+        .border_style(theme::accent());
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let field_count = if app.roles_tab == RolesTab::Minters { 3 } else { 3 };
+    let constraints: Vec<Constraint> = (0..field_count)
+        .map(|_| Constraint::Length(3))
+        .chain(std::iter::once(Constraint::Length(2)))
+        .chain(std::iter::once(Constraint::Min(1)))
+        .collect();
+
+    let fields = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    let address = app.roles_fields.first().map(|s| s.as_str()).unwrap_or("");
+    input_field::render(
+        f,
+        address,
+        "Wallet Address",
+        app.roles_focus == 0,
+        input_field::is_valid_pubkey(address),
+        fields[0],
+    );
+
+    if app.roles_tab == RolesTab::Minters {
+        let quota = app.roles_fields.get(2).map(|s| s.as_str()).unwrap_or("");
+        input_field::render(
+            f,
+            quota,
+            "Quota (raw units)",
+            app.roles_focus == 2,
+            input_field::is_valid_amount(quota),
+            fields[1],
+        );
+
+        let hint = "Tab: next field | Enter: submit | Esc: cancel";
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("  {hint}"), theme::dim())),
+            fields[2],
+        );
+    } else {
+        let role_type = app.roles_fields.get(1).map(|s| s.as_str()).unwrap_or("");
+        input_field::render(
+            f,
+            role_type,
+            "Role (0-4 or minter/burner/pauser/blacklister/seizer)",
+            app.roles_focus == 1,
+            matches!(role_type, "0" | "1" | "2" | "3" | "4" | "minter" | "burner" | "pauser" | "blacklister" | "seizer" | ""),
+            fields[1],
+        );
+
+        let hint = "Tab: next field | Enter: submit | Esc: cancel";
+        f.render_widget(
+            Paragraph::new(Span::styled(format!("  {hint}"), theme::dim())),
+            fields[2],
+        );
+    }
 }
 
 fn render_roles_table(f: &mut Frame, app: &App, area: Rect) {

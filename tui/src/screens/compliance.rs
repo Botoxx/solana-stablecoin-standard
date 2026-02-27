@@ -34,6 +34,8 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // When editing blacklist (focus 0 or 1 = address/reason), show add form
+    // When editing seize (focus 0 or 2 = wallet/amount), show seize panel
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -107,19 +109,40 @@ fn render_blacklist_table(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
+    // Determine if we're in blacklist-add mode (focus cycles 0→1→2, field 1 = reason)
+    // vs seize mode (focus cycles 0→1→2, field 2 = amount)
+    let is_blacklist_edit = app.input_mode == InputMode::Editing
+        && app
+            .compliance_fields
+            .get(2)
+            .map(|s| s.is_empty())
+            .unwrap_or(true)
+        && (app.compliance_focus == 0 || app.compliance_focus == 1);
+
+    let title = if is_blacklist_edit {
+        " Add to Blacklist "
+    } else {
+        " Seize Tokens "
+    };
+
     let block = Block::default()
-        .title(Span::styled(" Seize Tokens ", theme::bold()))
+        .title(Span::styled(title, theme::bold()))
         .borders(Borders::ALL)
-        .border_style(theme::border());
+        .border_style(if app.input_mode == InputMode::Editing {
+            theme::accent()
+        } else {
+            theme::border()
+        });
 
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if !app
-        .config
-        .as_ref()
-        .map(|c| c.enable_permanent_delegate)
-        .unwrap_or(false)
+    if !app.input_mode.is_editing()
+        && !app
+            .config
+            .as_ref()
+            .map(|c| c.enable_permanent_delegate)
+            .unwrap_or(false)
     {
         f.render_widget(
             Paragraph::new(Span::styled(
@@ -146,29 +169,45 @@ fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
         .first()
         .map(|s| s.as_str())
         .unwrap_or("");
-    let amount = app
-        .compliance_fields
-        .get(2)
-        .map(|s| s.as_str())
-        .unwrap_or("");
 
     input_field::render(
         f,
         wallet,
-        "Target Wallet",
+        "Address",
         app.compliance_focus == 0 && app.input_mode == InputMode::Editing,
         input_field::is_valid_pubkey(wallet),
         fields[0],
     );
 
-    input_field::render(
-        f,
-        amount,
-        "Amount to Seize",
-        app.compliance_focus == 2 && app.input_mode == InputMode::Editing,
-        input_field::is_valid_amount(amount),
-        fields[1],
-    );
+    if is_blacklist_edit {
+        let reason = app
+            .compliance_fields
+            .get(1)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        input_field::render(
+            f,
+            reason,
+            "Reason",
+            app.compliance_focus == 1 && app.input_mode == InputMode::Editing,
+            !reason.is_empty() || app.compliance_focus != 1,
+            fields[1],
+        );
+    } else {
+        let amount = app
+            .compliance_fields
+            .get(2)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        input_field::render(
+            f,
+            amount,
+            "Amount to Seize",
+            app.compliance_focus == 2 && app.input_mode == InputMode::Editing,
+            input_field::is_valid_amount(amount),
+            fields[1],
+        );
+    }
 
     let hint = if app.input_mode == InputMode::Editing {
         "Tab: next | Enter: submit | Esc: cancel"

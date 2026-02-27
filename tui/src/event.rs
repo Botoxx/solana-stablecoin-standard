@@ -1,4 +1,4 @@
-use crossterm::event::{Event as CtEvent, EventStream, KeyEvent};
+use crossterm::event::{Event as CtEvent, EventStream, KeyEvent, KeyEventKind};
 use futures_util::StreamExt;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -58,7 +58,7 @@ impl EventLoop {
                 tokio::select! {
                     maybe_event = reader.next() => {
                         match maybe_event {
-                            Some(Ok(CtEvent::Key(k))) => {
+                            Some(Ok(CtEvent::Key(k))) if k.kind == KeyEventKind::Press => {
                                 if tx.send(AppEvent::Key(k)).is_err() {
                                     break;
                                 }

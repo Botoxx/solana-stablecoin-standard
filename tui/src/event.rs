@@ -1,6 +1,9 @@
 use crossterm::event::{self, Event as CtEvent, KeyEvent};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::accounts::StablecoinConfig;
 use crate::events::EventData;
@@ -37,18 +40,37 @@ pub struct RpcData {
 pub struct EventLoop {
     pub tx: mpsc::UnboundedSender<AppEvent>,
     pub rx: mpsc::UnboundedReceiver<AppEvent>,
+    pub cancel: CancellationToken,
 }
 
 impl EventLoop {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        Self { tx, rx }
+        Self {
+            tx,
+            rx,
+            cancel: CancellationToken::new(),
+        }
     }
 
     /// Spawn the crossterm event reader (blocking → spawn_blocking).
+    /// Uses an AtomicBool so the blocking thread can check for cancellation.
     pub fn spawn_crossterm(&self) {
         let tx = self.tx.clone();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop2 = stop.clone();
+        let cancel = self.cancel.clone();
+
+        // Watch cancellation token and set the atomic flag
+        tokio::spawn(async move {
+            cancel.cancelled().await;
+            stop2.store(true, Ordering::Relaxed);
+        });
+
         tokio::task::spawn_blocking(move || loop {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
             if event::poll(Duration::from_millis(50)).unwrap_or(false) {
                 if let Ok(evt) = event::read() {
                     let app_evt = match evt {
@@ -67,12 +89,17 @@ impl EventLoop {
     /// Spawn the tick timer.
     pub fn spawn_tick(&self, interval: Duration) {
         let tx = self.tx.clone();
+        let cancel = self.cancel.clone();
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             loop {
-                ticker.tick().await;
-                if tx.send(AppEvent::Tick).is_err() {
-                    break;
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = ticker.tick() => {
+                        if tx.send(AppEvent::Tick).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         });

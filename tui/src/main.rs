@@ -108,6 +108,8 @@ async fn run() -> error::Result<()> {
     let mut rx = event_loop.rx;
     let tx = event_loop.tx.clone();
 
+    let cancel = event_loop.cancel.clone();
+
     // Main loop
     while app.running {
         // Draw
@@ -175,7 +177,8 @@ async fn run() -> error::Result<()> {
         }
     }
 
-    // Save config and restore terminal
+    // Cancel all background tasks, save config, restore terminal
+    cancel.cancel();
     let _ = cfg.save();
     tui_backend::restore()?;
     Ok(())

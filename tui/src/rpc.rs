@@ -240,23 +240,34 @@ pub fn parse_supply_from_data(data: &[u8]) -> Option<u64> {
 }
 
 /// Parse Token-2022 metadata (name + symbol) from TLV extension data in mint account.
+///
+/// Token-2022 layout for Mint with extensions:
+///   [0..82]   Mint base data
+///   [82..165] Padding (zeros) to Account::LEN
+///   [165]     AccountType (1=Mint)
+///   [166..]   TLV extension entries
+///
+/// Each TLV: type(2 LE) + length(2 LE) + data.
+/// TokenMetadata = ExtensionType 19. MetadataPointer = 18 (different!).
+/// Within TokenMetadata: update_authority(32) + mint(32) + name(4+len) + symbol(4+len) + uri(4+len)
 pub fn parse_token_metadata(data: &[u8]) -> (Option<String>, Option<String>) {
-    // Token-2022 mint base is 82 bytes. After that comes AccountType (1 byte) then TLV entries.
-    // Each TLV: type (2 bytes LE) + length (2 bytes LE) + data.
-    // TokenMetadata extension type = 18 (0x12, 0x00).
-    // Within metadata: update_authority(32) + mint(32) + name(4+len) + symbol(4+len) + uri(4+len)
-    if data.len() < 84 {
+    // Need at least: 165 (padded base) + 1 (AccountType) + 4 (one TLV header)
+    if data.len() < 170 {
         return (None, None);
     }
 
-    let mut pos = 83; // skip 82-byte mint base + 1-byte account type
+    let mut pos = 166; // skip 165-byte padded base + 1-byte AccountType
     while pos + 4 <= data.len() {
         let ext_type = u16::from_le_bytes([data[pos], data[pos + 1]]);
         let ext_len = u16::from_le_bytes([data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
-        if ext_type == 18 && pos + ext_len <= data.len() {
-            // TokenMetadata: update_authority(32) + mint(32) + name(borsh string) + symbol(borsh string)
+        if ext_type == 0 && ext_len == 0 {
+            break; // end sentinel
+        }
+
+        if ext_type == 19 && pos + ext_len <= data.len() {
+            // TokenMetadata: update_authority(32) + mint(32) + name + symbol + uri
             let md = &data[pos..pos + ext_len];
             if md.len() < 68 {
                 return (None, None);

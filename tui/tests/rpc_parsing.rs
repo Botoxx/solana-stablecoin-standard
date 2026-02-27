@@ -111,11 +111,12 @@ fn test_parse_supply_zero() {
 // ---- Token metadata TLV parsing ----
 
 /// Build a fake mint account with TokenMetadata extension.
-/// Layout: 82-byte mint base | 1-byte AccountType | TLV entries...
+/// Token-2022 layout: [0..82] Mint base | [82..165] padding | [165] AccountType(1=Mint) | [166..] TLV entries
 /// TLV: type(2 LE) | length(2 LE) | data
-/// TokenMetadata (type=18): update_authority(32) | mint(32) | name(4+len) | symbol(4+len) | uri(4+len)
+/// TokenMetadata (type=19): update_authority(32) | mint(32) | name(4+len) | symbol(4+len) | uri(4+len)
 fn build_mint_with_metadata(name: &str, symbol: &str, uri: &str) -> Vec<u8> {
-    let mut data = vec![0u8; 83]; // 82 mint base + 1 account type
+    let mut data = vec![0u8; 165]; // 82 mint base + 83 padding to Account::LEN
+    data.push(1); // AccountType = 1 (Mint) at offset 165
 
     // Build metadata content
     let mut md = Vec::new();
@@ -130,8 +131,8 @@ fn build_mint_with_metadata(name: &str, symbol: &str, uri: &str) -> Vec<u8> {
     md.extend_from_slice(&(uri.len() as u32).to_le_bytes());
     md.extend_from_slice(uri.as_bytes());
 
-    // TLV header: type=18 (0x12, 0x00), length
-    let ext_type: u16 = 18;
+    // TLV header: type=19 (TokenMetadata), length
+    let ext_type: u16 = 19;
     let ext_len: u16 = md.len() as u16;
     data.extend_from_slice(&ext_type.to_le_bytes());
     data.extend_from_slice(&ext_len.to_le_bytes());
@@ -158,8 +159,9 @@ fn test_parse_token_metadata_empty_strings() {
 
 #[test]
 fn test_parse_token_metadata_no_extension() {
-    // Just the base mint, no TLV extensions
-    let data = vec![0u8; 83];
+    // Just the padded base mint + AccountType, no TLV extensions
+    let mut data = vec![0u8; 165];
+    data.push(1); // AccountType
     let (name, symbol) = parse_token_metadata(&data);
     assert!(name.is_none());
     assert!(symbol.is_none());
@@ -175,7 +177,8 @@ fn test_parse_token_metadata_too_short() {
 
 #[test]
 fn test_parse_token_metadata_wrong_extension_type() {
-    let mut data = vec![0u8; 83];
+    let mut data = vec![0u8; 165];
+    data.push(1); // AccountType
     // TLV with type=99 (not metadata)
     let ext_type: u16 = 99;
     let ext_len: u16 = 100;
@@ -190,14 +193,15 @@ fn test_parse_token_metadata_wrong_extension_type() {
 
 #[test]
 fn test_parse_token_metadata_skips_preceding_extensions() {
-    let mut data = vec![0u8; 83];
+    let mut data = vec![0u8; 165];
+    data.push(1); // AccountType
 
     // First TLV: type=5 (some other extension), length=10
     data.extend_from_slice(&5u16.to_le_bytes());
     data.extend_from_slice(&10u16.to_le_bytes());
     data.extend_from_slice(&[0u8; 10]);
 
-    // Second TLV: type=18 (metadata)
+    // Second TLV: type=19 (TokenMetadata)
     let mut md = Vec::new();
     md.extend_from_slice(&[0u8; 64]); // update_authority + mint
     let name = "SkipTest";
@@ -210,7 +214,7 @@ fn test_parse_token_metadata_skips_preceding_extensions() {
     md.extend_from_slice(&(uri.len() as u32).to_le_bytes());
     md.extend_from_slice(uri.as_bytes());
 
-    data.extend_from_slice(&18u16.to_le_bytes());
+    data.extend_from_slice(&19u16.to_le_bytes());
     data.extend_from_slice(&(md.len() as u16).to_le_bytes());
     data.extend_from_slice(&md);
 

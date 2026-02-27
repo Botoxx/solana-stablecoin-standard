@@ -87,12 +87,17 @@ Standalone Rust binary — **not** in the Anchor workspace (avoids SBF toolchain
 cargo test
 ```
 
-39 tests across 5 files:
+144 tests across 10 files:
 - `borsh_roundtrip.rs` — all 4 account types encode/decode correctly
 - `pda_crosscheck.rs` — PDA derivation matches TypeScript SDK
 - `event_parse.rs` — all 14 event types parse correctly
 - `instruction_disc.rs` — all 15 instruction discriminators verified
 - `config_persist.rs` — config save/load roundtrip
+- `app_state.rs` — app state machine, toast lifecycle, event queue, theme helpers
+- `input_handling.rs` — all screen input handlers, form validation, field cycling
+- `error_parsing.rs` — error code mapping, tx log parsing
+- `rpc_parsing.rs` — Token-2022 holder/supply/metadata byte parsing
+- `render_screens.rs` — all 6 screens + overlays render without panics (TestBackend)
 
 ## Screens
 

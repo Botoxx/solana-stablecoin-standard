@@ -120,35 +120,14 @@ impl SolanaRpc {
 
         accounts
             .into_iter()
-            .filter_map(|(_, acct)| {
-                let data = &acct.data;
-                if data.len() < 109 {
-                    return None;
-                }
-                let owner = Pubkey::try_from(&data[32..64]).ok()?;
-                let amount = u64::from_le_bytes(data[64..72].try_into().ok()?);
-                let state = data[108];
-                // state: 0=uninitialized, 1=initialized, 2=frozen
-                if state == 0 {
-                    return None;
-                }
-                Some(HolderInfo {
-                    owner,
-                    balance: amount,
-                    frozen: state == 2,
-                })
-            })
+            .filter_map(|(_, acct)| parse_holder_from_data(&acct.data))
             .collect()
     }
 
     /// Fetch token supply from the mint account.
     pub async fn fetch_supply(&self, mint: &Pubkey) -> Option<u64> {
         let data = self.fetch_account_data(mint).await?;
-        // Token-2022 mint: supply at offset 36..44 (u64 LE)
-        if data.len() < 44 {
-            return None;
-        }
-        Some(u64::from_le_bytes(data[36..44].try_into().ok()?))
+        parse_supply_from_data(&data)
     }
 
     /// Fetch token name and symbol from Token-2022 metadata extension.
@@ -232,8 +211,36 @@ impl SolanaRpc {
     }
 }
 
+/// Parse raw Token-2022 token account data into HolderInfo.
+/// Layout: mint(0..32), owner(32..64), amount(64..72 LE), ..., state(108).
+/// state: 0=uninitialized, 1=initialized, 2=frozen.
+pub fn parse_holder_from_data(data: &[u8]) -> Option<HolderInfo> {
+    if data.len() < 109 {
+        return None;
+    }
+    let owner = Pubkey::try_from(&data[32..64]).ok()?;
+    let amount = u64::from_le_bytes(data[64..72].try_into().ok()?);
+    let state = data[108];
+    if state == 0 {
+        return None;
+    }
+    Some(HolderInfo {
+        owner,
+        balance: amount,
+        frozen: state == 2,
+    })
+}
+
+/// Parse supply (u64 LE) from raw Token-2022 mint account data at offset 36..44.
+pub fn parse_supply_from_data(data: &[u8]) -> Option<u64> {
+    if data.len() < 44 {
+        return None;
+    }
+    Some(u64::from_le_bytes(data[36..44].try_into().ok()?))
+}
+
 /// Parse Token-2022 metadata (name + symbol) from TLV extension data in mint account.
-fn parse_token_metadata(data: &[u8]) -> (Option<String>, Option<String>) {
+pub fn parse_token_metadata(data: &[u8]) -> (Option<String>, Option<String>) {
     // Token-2022 mint base is 82 bytes. After that comes AccountType (1 byte) then TLV entries.
     // Each TLV: type (2 bytes LE) + length (2 bytes LE) + data.
     // TokenMetadata extension type = 18 (0x12, 0x00).

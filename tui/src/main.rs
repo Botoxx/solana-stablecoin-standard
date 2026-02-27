@@ -79,8 +79,7 @@ async fn run() -> error::Result<()> {
     // Create app + event loop
     let mut app = App::new();
     let event_loop = EventLoop::new();
-    event_loop.spawn_crossterm();
-    event_loop.spawn_tick(Duration::from_secs(5));
+    event_loop.spawn_event_task(Duration::from_secs(5));
 
     // Create RPC client
     let rpc = rpc::SolanaRpc::new(&cfg.rpc_url);
@@ -107,7 +106,6 @@ async fn run() -> error::Result<()> {
 
     let mut rx = event_loop.rx;
     let tx = event_loop.tx.clone();
-    let stop = event_loop.stop.clone();
 
     // Main loop
     while app.running {
@@ -176,14 +174,10 @@ async fn run() -> error::Result<()> {
         }
     }
 
-    // Signal all background tasks to stop, save config, restore terminal
-    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Save config, restore terminal
     let _ = cfg.save();
     tui_backend::restore()?;
-
-    // Force exit — spawn_blocking threads can't be joined from async context
-    // and would keep the tokio runtime alive. Terminal is already restored.
-    std::process::exit(0);
+    Ok(())
 }
 
 fn handle_key(

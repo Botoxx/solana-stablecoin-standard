@@ -489,11 +489,14 @@ fn test_compliance_a_enters_blacklist_edit() {
 
 #[test]
 fn test_compliance_s_enters_seize_edit() {
+    use sss_tui::app::ComplianceMode;
+
     let mut app = App::new();
     app.screen = Screen::Compliance;
 
     send_key(&mut app, KeyCode::Char('s'));
     assert_eq!(app.input_mode, InputMode::Editing);
+    assert_eq!(app.compliance_mode, ComplianceMode::Seize);
 }
 
 #[test]

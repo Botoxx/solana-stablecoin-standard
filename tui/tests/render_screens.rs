@@ -3,7 +3,7 @@ use ratatui::Terminal;
 use solana_sdk::pubkey::Pubkey;
 
 use sss_tui::accounts::{BlacklistEntry, MinterConfig, RoleAssignment, StablecoinConfig};
-use sss_tui::app::{App, OpsTab, Screen};
+use sss_tui::app::{App, ComplianceMode, InputMode, OpsTab, Screen};
 use sss_tui::events::EventData;
 use sss_tui::rpc::HolderInfo;
 
@@ -43,6 +43,25 @@ fn render_app(app: &App) {
             sss_tui::screens::render(f, app);
         })
         .unwrap();
+}
+
+fn render_app_to_string(app: &App) -> String {
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| {
+            sss_tui::screens::render(f, app);
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let mut output = String::new();
+    for y in 0..buf.area.height {
+        for x in 0..buf.area.width {
+            output.push_str(buf.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "));
+        }
+        output.push('\n');
+    }
+    output
 }
 
 // ---- Dashboard screen ----
@@ -225,6 +244,48 @@ fn test_render_compliance_no_config() {
     app.screen = Screen::Compliance;
     // No config loaded = not SSS-2
     render_app(&app);
+}
+
+#[test]
+fn test_render_compliance_seize_mode_shows_seize_title() {
+    let mut app = App::new();
+    app.screen = Screen::Compliance;
+    app.config = Some(make_config(false, true)); // SSS-2
+    app.compliance_mode = ComplianceMode::Seize;
+    app.input_mode = InputMode::Editing;
+    app.compliance_focus = 0;
+
+    let output = render_app_to_string(&app);
+    assert!(
+        output.contains("Seize Tokens"),
+        "Expected 'Seize Tokens' in output, got:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("Add to Blacklist"),
+        "Should NOT contain 'Add to Blacklist' in seize mode"
+    );
+}
+
+#[test]
+fn test_render_compliance_blacklist_mode_shows_blacklist_title() {
+    let mut app = App::new();
+    app.screen = Screen::Compliance;
+    app.config = Some(make_config(false, true)); // SSS-2
+    app.compliance_mode = ComplianceMode::Blacklist;
+    app.input_mode = InputMode::Editing;
+    app.compliance_focus = 0;
+
+    let output = render_app_to_string(&app);
+    assert!(
+        output.contains("Add to Blacklist"),
+        "Expected 'Add to Blacklist' in output, got:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("Seize Tokens"),
+        "Should NOT contain 'Seize Tokens' in blacklist mode"
+    );
 }
 
 // ---- Events screen ----

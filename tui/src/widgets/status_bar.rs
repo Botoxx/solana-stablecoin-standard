@@ -38,9 +38,17 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     let config_pda = app.config.as_ref().map(|_| "loaded").unwrap_or("none");
 
+    let signer = if app.signer_display.is_empty() {
+        "none".to_string()
+    } else {
+        app.signer_display.clone()
+    };
+
     let status = Line::from(vec![
         Span::styled(" ", theme::dim()),
         Span::styled(cluster, theme::accent()),
+        Span::styled(" │ ", theme::dim()),
+        Span::styled(format!("Signer: {signer}"), theme::base()),
         Span::styled(" │ ", theme::dim()),
         Span::styled(format!("Config: {config_pda}"), theme::dim()),
         Span::styled(" │ ", theme::dim()),

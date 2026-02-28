@@ -25,6 +25,7 @@ pub fn render(f: &mut Frame) {
         ("", ""),
         ("--- Operations ---", ""),
         ("Tab", "Next field / sub-tab"),
+        ("Shift+Tab", "Previous field / sub-tab"),
         ("Enter", "Submit / Confirm"),
         ("Esc", "Cancel / Normal mode"),
         ("e/i", "Enter edit mode"),

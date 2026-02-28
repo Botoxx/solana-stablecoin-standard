@@ -1,7 +1,7 @@
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
-    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
+    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcSimulateTransactionConfig},
     rpc_filter::{Memcmp, RpcFilterType},
 };
 use solana_sdk::{
@@ -147,6 +147,14 @@ impl SolanaRpc {
         ixs: &[Instruction],
         signer: &Keypair,
     ) -> std::result::Result<String, String> {
+        // Log signer and all accounts for diagnostics
+        let signer_pk = signer.pubkey();
+        let signer_balance = self
+            .client
+            .get_balance(&signer_pk)
+            .await
+            .unwrap_or(0);
+
         let recent_blockhash = self
             .client
             .get_latest_blockhash()
@@ -155,16 +163,71 @@ impl SolanaRpc {
 
         let tx = Transaction::new_signed_with_payer(
             ixs,
-            Some(&signer.pubkey()),
+            Some(&signer_pk),
             &[signer],
             recent_blockhash,
         );
 
+        // Simulate first to get detailed logs on failure
+        let sim_config = RpcSimulateTransactionConfig {
+            sig_verify: false,
+            commitment: Some(CommitmentConfig::confirmed()),
+            ..Default::default()
+        };
+        let sim = self
+            .client
+            .simulate_transaction_with_config(&tx, sim_config)
+            .await;
+
+        if let Ok(ref resp) = sim {
+            if let Some(ref err) = resp.value.err {
+                let err_str = format!("{err:?}");
+                let logs = resp
+                    .value
+                    .logs
+                    .as_ref()
+                    .map(|l| l.join("\n"))
+                    .unwrap_or_default();
+
+                // Try custom program error from simulation error
+                if let Some(hex_start) = err_str.find("Custom(") {
+                    let after = &err_str[hex_start + 7..];
+                    if let Some(end) = after.find(')') {
+                        if let Ok(code) = after[..end].parse::<u32>() {
+                            return Err(crate::error::error_message(code).to_string());
+                        }
+                    }
+                }
+
+                // For AccountNotFound, add signer diagnostic
+                if err_str.contains("AccountNotFound") {
+                    return Err(format!(
+                        "AccountNotFound — signer: {} (balance: {} lamports). Logs: {}",
+                        signer_pk,
+                        signer_balance,
+                        if logs.is_empty() { "none".to_string() } else { logs }
+                    ));
+                }
+
+                let detail = if logs.is_empty() {
+                    err_str
+                } else {
+                    let last_log = logs
+                        .lines()
+                        .rev()
+                        .find(|l| l.contains("Error") || l.contains("failed"))
+                        .unwrap_or(&err_str);
+                    last_log.to_string()
+                };
+                return Err(detail);
+            }
+        }
+
+        // Simulation passed — send for real
         match self.client.send_and_confirm_transaction(&tx).await {
             Ok(sig) => Ok(sig.to_string()),
             Err(e) => {
                 let msg = e.to_string();
-                // Try to extract custom error code
                 if let Some(hex_start) = msg.find("custom program error: 0x") {
                     let hex_str = &msg[hex_start + 24..];
                     let hex_end = hex_str

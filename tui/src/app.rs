@@ -176,6 +176,7 @@ pub struct App {
     pub events: VecDeque<EventData>,
     pub last_refresh: Option<Instant>,
     pub ws_connected: bool,
+    pub signer_display: String, // truncated signer pubkey for status bar
 
     // UI state
     pub toast: Option<Toast>,
@@ -228,6 +229,7 @@ impl App {
             events: VecDeque::with_capacity(500),
             last_refresh: None,
             ws_connected: false,
+            signer_display: String::new(),
             toast: None,
             confirm: None,
             show_help: false,

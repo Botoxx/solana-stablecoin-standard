@@ -23,9 +23,23 @@ pub enum TuiError {
 
 pub type Result<T> = std::result::Result<T, TuiError>;
 
-/// Map Anchor error codes (6000-6023) to human-readable messages.
+/// Map error codes to human-readable messages.
+/// Covers Anchor framework errors (2000-3999) and SSS custom errors (6000-6023).
 pub fn error_message(code: u32) -> &'static str {
     match code {
+        // Anchor constraint errors
+        2001 => "Account constraint violated: not mutable",
+        2003 => "Account constraint violated",
+        2006 => "PDA seed constraint failed — account doesn't exist or wrong derivation",
+        2011 => "Account constraint: not a signer",
+        2012 => "Account address mismatch",
+        // Anchor account errors
+        3001 => "Account discriminator not found — account may not exist",
+        3002 => "Account discriminator mismatch — wrong account type",
+        3003 => "Account failed to deserialize — may not be initialized",
+        3007 => "Account owned by wrong program",
+        3012 => "Account not initialized — required role or config PDA missing",
+        // SSS custom errors (6000-6023)
         6000 => "Unauthorized: you don't have the required role",
         6001 => "System is paused",
         6002 => "System is not paused",

@@ -78,6 +78,8 @@ async fn run() -> error::Result<()> {
 
     // Create app + event loop
     let mut app = App::new();
+    let signer_pk = solana_sdk::signer::Signer::pubkey(&keypair).to_string();
+    app.signer_display = format!("{}..{}", &signer_pk[..4], &signer_pk[signer_pk.len() - 4..]);
     let event_loop = EventLoop::new();
     event_loop.spawn_event_task(Duration::from_secs(5));
 

@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     text::{Line, Span},
@@ -236,19 +236,22 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
                     OpsTab::Mint | OpsTab::Burn => 1,
                     _ => 0,
                 };
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    app.ops_focus = if app.ops_focus == 0 {
-                        max
-                    } else {
-                        app.ops_focus - 1
-                    };
+                app.ops_focus = if app.ops_focus >= max {
+                    0
                 } else {
-                    app.ops_focus = if app.ops_focus >= max {
-                        0
-                    } else {
-                        app.ops_focus + 1
-                    };
-                }
+                    app.ops_focus + 1
+                };
+            }
+            KeyCode::BackTab => {
+                let max = match app.ops_tab {
+                    OpsTab::Mint | OpsTab::Burn => 1,
+                    _ => 0,
+                };
+                app.ops_focus = if app.ops_focus == 0 {
+                    max
+                } else {
+                    app.ops_focus - 1
+                };
             }
             KeyCode::Enter => {
                 submit_operation(app);
@@ -275,6 +278,12 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
             let idx = app.ops_tab as usize;
             let next = (idx + 1) % OpsTab::ALL.len();
             app.ops_tab = OpsTab::ALL[next];
+            app.reset_ops_fields();
+        }
+        KeyCode::BackTab => {
+            let idx = app.ops_tab as usize;
+            let prev = if idx == 0 { OpsTab::ALL.len() - 1 } else { idx - 1 };
+            app.ops_tab = OpsTab::ALL[prev];
             app.reset_ops_fields();
         }
         KeyCode::Enter => {

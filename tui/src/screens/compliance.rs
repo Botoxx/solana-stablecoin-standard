@@ -217,7 +217,7 @@ fn render_seize_panel(f: &mut Frame, app: &App, area: Rect) {
 pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
     if app.input_mode == InputMode::Editing {
         match key.code {
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::BackTab => {
                 // Blacklist: toggle 0 (address) ↔ 1 (reason)
                 // Seize: toggle 0 (address) ↔ 2 (amount)
                 if app.compliance_mode == ComplianceMode::Blacklist {

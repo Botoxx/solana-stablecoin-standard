@@ -261,11 +261,11 @@ fn test_ops_shift_tab_reverse_cycling() {
     app.input_mode = InputMode::Editing;
     assert_eq!(app.ops_focus, 0);
 
-    // Shift+Tab from 0 wraps to max (1 for mint)
-    send_key_event(&mut app, shift_key(KeyCode::Tab));
+    // BackTab (Shift+Tab) from 0 wraps to max (1 for mint)
+    send_key(&mut app, KeyCode::BackTab);
     assert_eq!(app.ops_focus, 1);
 
-    send_key_event(&mut app, shift_key(KeyCode::Tab));
+    send_key(&mut app, KeyCode::BackTab);
     assert_eq!(app.ops_focus, 0);
 }
 

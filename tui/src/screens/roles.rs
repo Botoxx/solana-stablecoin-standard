@@ -246,6 +246,18 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
                 };
                 app.roles_focus = (app.roles_focus + 1) % (max + 1);
             }
+            KeyCode::BackTab => {
+                let max = if app.roles_tab == RolesTab::Minters {
+                    2
+                } else {
+                    1
+                };
+                app.roles_focus = if app.roles_focus == 0 {
+                    max
+                } else {
+                    app.roles_focus - 1
+                };
+            }
             KeyCode::Enter => submit_role_action(app),
             other => {
                 if let Some(field) = app.roles_fields.get_mut(app.roles_focus) {
@@ -257,7 +269,7 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
     }
 
     match key.code {
-        KeyCode::Tab => {
+        KeyCode::Tab | KeyCode::BackTab => {
             app.roles_tab = match app.roles_tab {
                 RolesTab::Roles => RolesTab::Minters,
                 RolesTab::Minters => RolesTab::Roles,

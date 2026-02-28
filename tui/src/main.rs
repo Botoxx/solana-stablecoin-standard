@@ -283,9 +283,9 @@ fn execute_confirm(
         return;
     };
 
-    let ix_result = instructions::build_instruction(&action, &pda, config, keypair);
+    let ix_result = instructions::build_instructions(&action, &pda, config, keypair);
     match ix_result {
-        Ok(ix) => {
+        Ok(ixs) => {
             app.tx_pending = true;
             let rpc2 = rpc.clone();
             let tx2 = tx.clone();
@@ -293,7 +293,7 @@ fn execute_confirm(
             tokio::spawn(async move {
                 let kp = solana_sdk::signer::keypair::Keypair::try_from(kp_bytes.as_ref())
                     .expect("keypair roundtrip");
-                let result = rpc2.send_and_confirm(&ix, &kp).await;
+                let result = rpc2.send_and_confirm(&ixs, &kp).await;
                 let _ = tx2.send(AppEvent::TxResult(result));
             });
         }

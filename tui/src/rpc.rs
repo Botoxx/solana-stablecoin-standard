@@ -141,10 +141,10 @@ impl SolanaRpc {
         parse_token_metadata(&data)
     }
 
-    /// Send and confirm a transaction with a single instruction.
+    /// Send and confirm a transaction with one or more instructions.
     pub async fn send_and_confirm(
         &self,
-        ix: &Instruction,
+        ixs: &[Instruction],
         signer: &Keypair,
     ) -> std::result::Result<String, String> {
         let recent_blockhash = self
@@ -154,7 +154,7 @@ impl SolanaRpc {
             .map_err(|e| format!("Blockhash: {e}"))?;
 
         let tx = Transaction::new_signed_with_payer(
-            &[ix.clone()],
+            ixs,
             Some(&signer.pubkey()),
             &[signer],
             recent_blockhash,

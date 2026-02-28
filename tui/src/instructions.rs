@@ -27,13 +27,31 @@ fn parse_pubkey(s: &str) -> Result<Pubkey> {
         .map_err(|_| TuiError::Pubkey(s.to_string()))
 }
 
-/// Build an instruction from a confirmed action.
-pub fn build_instruction(
+/// Build a create-ATA-idempotent instruction (won't fail if ATA already exists).
+fn create_ata_idempotent_ix(funder: &Pubkey, owner: &Pubkey, mint: &Pubkey) -> Instruction {
+    let ata = pda::get_ata(owner, mint);
+    Instruction {
+        program_id: pda::ASSOCIATED_TOKEN_PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(*funder, true),                              // funding account
+            AccountMeta::new(ata, false),                                 // associated token account
+            AccountMeta::new_readonly(*owner, false),                     // wallet address
+            AccountMeta::new_readonly(*mint, false),                      // token mint
+            AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),     // system program
+            AccountMeta::new_readonly(pda::TOKEN_2022_PROGRAM_ID, false), // token program
+        ],
+        data: vec![1], // 1 = CreateIdempotent
+    }
+}
+
+/// Build instructions from a confirmed action.
+/// Returns a Vec because some actions (Mint) need a preceding create-ATA instruction.
+pub fn build_instructions(
     action: &ConfirmAction,
     config_pda: &Pubkey,
     config: &StablecoinConfig,
     keypair: &Keypair,
-) -> Result<Instruction> {
+) -> Result<Vec<Instruction>> {
     let signer = keypair.pubkey();
     let mint = config.mint;
 
@@ -49,7 +67,9 @@ pub fn build_instruction(
                 .serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            let create_ata = create_ata_idempotent_ix(&signer, &recipient_pk, &mint);
+
+            let mint_ix = Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),             // minter
@@ -61,7 +81,9 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::TOKEN_2022_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            };
+
+            Ok(vec![create_ata, mint_ix])
         }
 
         ConfirmAction::Burn { source, amount } => {
@@ -77,7 +99,7 @@ pub fn build_instruction(
                 .serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),             // burner
@@ -88,7 +110,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::TOKEN_2022_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::Freeze { wallet } => {
@@ -97,7 +119,7 @@ pub fn build_instruction(
 
             let data = instruction_discriminator("freeze_account").to_vec();
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new_readonly(signer, true),       // authority
@@ -107,7 +129,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::TOKEN_2022_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::Thaw { wallet } => {
@@ -116,7 +138,7 @@ pub fn build_instruction(
 
             let data = instruction_discriminator("thaw_account").to_vec();
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new_readonly(signer, true),
@@ -126,7 +148,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::TOKEN_2022_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::Pause => {
@@ -134,7 +156,7 @@ pub fn build_instruction(
 
             let data = instruction_discriminator("pause").to_vec();
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new_readonly(signer, true),    // pauser
@@ -142,7 +164,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(role_pda, false), // role_assignment
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::Unpause => {
@@ -150,7 +172,7 @@ pub fn build_instruction(
 
             let data = instruction_discriminator("unpause").to_vec();
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new_readonly(signer, true),
@@ -158,7 +180,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(role_pda, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::AssignRole { address, role_type } => {
@@ -176,7 +198,7 @@ pub fn build_instruction(
             0u8.serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?; // Assign=0
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),                // authority
@@ -185,7 +207,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::RevokeRole { address, role_type } => {
@@ -201,7 +223,7 @@ pub fn build_instruction(
             1u8.serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?; // Revoke=1
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),
@@ -210,7 +232,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::AddMinter { address, quota } => {
@@ -228,7 +250,7 @@ pub fn build_instruction(
                 .serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),
@@ -237,7 +259,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::UpdateQuota { address, new_quota } => {
@@ -254,7 +276,7 @@ pub fn build_instruction(
                 .serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),
@@ -263,7 +285,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::RemoveMinter { address } => {
@@ -277,7 +299,7 @@ pub fn build_instruction(
             2u8.serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?; // Remove=2
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),
@@ -286,7 +308,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::AddBlacklist { address, reason } => {
@@ -302,7 +324,7 @@ pub fn build_instruction(
                 .serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new(signer, true),                // blacklister
@@ -312,7 +334,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::SYSTEM_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::RemoveBlacklist { address } => {
@@ -325,7 +347,7 @@ pub fn build_instruction(
             addr.serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new_readonly(signer, true), // blacklister
@@ -334,7 +356,7 @@ pub fn build_instruction(
                     AccountMeta::new(bl_pda, false), // blacklist_entry
                 ],
                 data,
-            })
+            }])
         }
 
         ConfirmAction::Seize { wallet, amount } => {
@@ -348,7 +370,7 @@ pub fn build_instruction(
                 .serialize(&mut data)
                 .map_err(|e| TuiError::Borsh(e.to_string()))?;
 
-            Ok(Instruction {
+            Ok(vec![Instruction {
                 program_id: pda::SSS_TOKEN_PROGRAM_ID,
                 accounts: vec![
                     AccountMeta::new_readonly(signer, true),    // seizer
@@ -360,7 +382,7 @@ pub fn build_instruction(
                     AccountMeta::new_readonly(pda::TOKEN_2022_PROGRAM_ID, false),
                 ],
                 data,
-            })
+            }])
         }
     }
 }

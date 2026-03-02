@@ -63,19 +63,13 @@ pub fn handler(
         }
         MinterAction::UpdateQuota { new_quota } => {
             require!(new_quota > 0, SssError::InvalidAmount);
-            require!(
-                minter_config.config == config_key,
-                SssError::MinterNotFound
-            );
+            require!(minter_config.config == config_key, SssError::MinterNotFound);
             minter_config.quota_total = new_quota;
             minter_config.quota_remaining = new_quota;
             ("update".to_string(), new_quota, new_quota)
         }
         MinterAction::Remove => {
-            require!(
-                minter_config.config == config_key,
-                SssError::MinterNotFound
-            );
+            require!(minter_config.config == config_key, SssError::MinterNotFound);
             // Close the account — return lamports to authority and zero all data
             // to prevent stale fields from interfering with future re-add operations
             let dest = ctx.accounts.authority.to_account_info();

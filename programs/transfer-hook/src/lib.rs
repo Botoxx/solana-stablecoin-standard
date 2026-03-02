@@ -4,8 +4,7 @@ use spl_tlv_account_resolution::{
     account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList,
 };
 use spl_token_2022::extension::{
-    BaseStateWithExtensions, StateWithExtensions,
-    transfer_hook::TransferHookAccount,
+    transfer_hook::TransferHookAccount, BaseStateWithExtensions, StateWithExtensions,
 };
 use spl_token_2022::state::Account as TokenAccount;
 use spl_transfer_hook_interface::instruction::TransferHookInstruction;
@@ -44,14 +43,22 @@ fn get_paused_offset(config_data: &[u8]) -> Option<usize> {
     if config_data.len() <= OPTION_TAG_OFFSET {
         return None;
     }
-    let pending_auth_size: usize = if config_data[OPTION_TAG_OFFSET] == 0 { 1 } else { 33 };
+    let pending_auth_size: usize = if config_data[OPTION_TAG_OFFSET] == 0 {
+        1
+    } else {
+        33
+    };
     let offset = 8_usize
         .checked_add(32)?
         .checked_add(pending_auth_size)?
         .checked_add(32)?
         .checked_add(32)?
         .checked_add(1)?;
-    if config_data.len() > offset { Some(offset) } else { None }
+    if config_data.len() > offset {
+        Some(offset)
+    } else {
+        None
+    }
 }
 
 /// Calculate the offset of the `active` field in BlacklistEntry.
@@ -74,7 +81,11 @@ fn get_blacklist_active_offset(data: &[u8]) -> Option<usize> {
         .checked_add(reason_len)?
         .checked_add(8)?
         .checked_add(32)?;
-    if data.len() > offset { Some(offset) } else { None }
+    if data.len() > offset {
+        Some(offset)
+    } else {
+        None
+    }
 }
 
 #[program]
@@ -98,8 +109,8 @@ pub mod transfer_hook {
         // Define the extra account metas for the transfer hook
         let extra_metas = get_extra_account_metas(sss_token_program_id, config_pda)?;
 
-        let account_size =
-            ExtraAccountMetaList::size_of(extra_metas.len()).map_err(|_| TransferHookError::InvalidExtraAccountMetas)?;
+        let account_size = ExtraAccountMetaList::size_of(extra_metas.len())
+            .map_err(|_| TransferHookError::InvalidExtraAccountMetas)?;
 
         // Allocate space for the ExtraAccountMetaList
         let lamports = Rent::get()?.minimum_balance(account_size);
@@ -123,7 +134,10 @@ pub mod transfer_hook {
 
         // Initialize the ExtraAccountMetaList
         let mut data = ctx.accounts.extra_account_meta_list.try_borrow_mut_data()?;
-        ExtraAccountMetaList::init::<spl_transfer_hook_interface::instruction::ExecuteInstruction>(&mut data, &extra_metas)?;
+        ExtraAccountMetaList::init::<spl_transfer_hook_interface::instruction::ExecuteInstruction>(
+            &mut data,
+            &extra_metas,
+        )?;
 
         Ok(())
     }
@@ -148,8 +162,8 @@ pub mod transfer_hook {
             config_data.len() >= 8 && config_data[..8] == CONFIG_DISCRIMINATOR,
             TransferHookError::InvalidConfig
         );
-        let paused_offset = get_paused_offset(&config_data)
-            .ok_or(error!(TransferHookError::InvalidConfig))?;
+        let paused_offset =
+            get_paused_offset(&config_data).ok_or(error!(TransferHookError::InvalidConfig))?;
         require!(config_data[paused_offset] == 0, TransferHookError::Paused);
         drop(config_data);
 
@@ -230,8 +244,8 @@ fn check_blacklist(
         TransferHookError::InvalidBlacklist
     );
 
-    let active_offset = get_blacklist_active_offset(&data)
-        .ok_or(error!(TransferHookError::InvalidBlacklist))?;
+    let active_offset =
+        get_blacklist_active_offset(&data).ok_or(error!(TransferHookError::InvalidBlacklist))?;
 
     if data[active_offset] == 1 {
         return Err(err.into());

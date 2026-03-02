@@ -73,10 +73,7 @@ pub mod sss_token {
         instructions::update_roles::handler(ctx, address, role, action)
     }
 
-    pub fn propose_authority(
-        ctx: Context<ProposeAuthority>,
-        new_authority: Pubkey,
-    ) -> Result<()> {
+    pub fn propose_authority(ctx: Context<ProposeAuthority>, new_authority: Pubkey) -> Result<()> {
         instructions::propose_authority::handler(ctx, new_authority)
     }
 
@@ -92,10 +89,7 @@ pub mod sss_token {
         instructions::add_to_blacklist::handler(ctx, address, reason)
     }
 
-    pub fn remove_from_blacklist(
-        ctx: Context<RemoveFromBlacklist>,
-        address: Pubkey,
-    ) -> Result<()> {
+    pub fn remove_from_blacklist(ctx: Context<RemoveFromBlacklist>, address: Pubkey) -> Result<()> {
         instructions::remove_from_blacklist::handler(ctx, address)
     }
 

@@ -4,8 +4,7 @@ use spl_token_2022::{
     extension::{
         default_account_state::instruction as default_account_state_instruction,
         metadata_pointer::instruction as metadata_pointer_instruction,
-        transfer_hook::instruction as transfer_hook_instruction,
-        ExtensionType,
+        transfer_hook::instruction as transfer_hook_instruction, ExtensionType,
     },
     instruction as token_instruction,
 };
@@ -96,25 +95,33 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
 
     // Calculate mint account size: extensions only (metadata is dynamically added later)
     let extension_space =
-        ExtensionType::try_calculate_account_len::<spl_token_2022::state::Mint>(
-            &extension_types,
-        )
-        .map_err(|_| SssError::Overflow)?;
+        ExtensionType::try_calculate_account_len::<spl_token_2022::state::Mint>(&extension_types)
+            .map_err(|_| SssError::Overflow)?;
 
     // Metadata space: TLV header (2+2) + name + symbol + uri + mint pubkey + update_authority +
     // additional_metadata vec len. Conservative estimate with padding.
     // All string lengths are bounded by MAX_NAME/SYMBOL/URI_LENGTH (validated above).
-    let metadata_space = 4_usize  // TLV type + length
-        .checked_add(4).ok_or(SssError::Overflow)?
-        .checked_add(params.name.len()).ok_or(SssError::Overflow)?
-        .checked_add(4).ok_or(SssError::Overflow)?
-        .checked_add(params.symbol.len()).ok_or(SssError::Overflow)?
-        .checked_add(4).ok_or(SssError::Overflow)?
-        .checked_add(params.uri.len()).ok_or(SssError::Overflow)?
-        .checked_add(32).ok_or(SssError::Overflow)?  // mint pubkey
-        .checked_add(33).ok_or(SssError::Overflow)?  // update_authority (option)
-        .checked_add(4).ok_or(SssError::Overflow)?   // additional_metadata vec length
-        .checked_add(128).ok_or(SssError::Overflow)?; // padding for future fields
+    let metadata_space = 4_usize // TLV type + length
+        .checked_add(4)
+        .ok_or(SssError::Overflow)?
+        .checked_add(params.name.len())
+        .ok_or(SssError::Overflow)?
+        .checked_add(4)
+        .ok_or(SssError::Overflow)?
+        .checked_add(params.symbol.len())
+        .ok_or(SssError::Overflow)?
+        .checked_add(4)
+        .ok_or(SssError::Overflow)?
+        .checked_add(params.uri.len())
+        .ok_or(SssError::Overflow)?
+        .checked_add(32)
+        .ok_or(SssError::Overflow)? // mint pubkey
+        .checked_add(33)
+        .ok_or(SssError::Overflow)? // update_authority (option)
+        .checked_add(4)
+        .ok_or(SssError::Overflow)? // additional_metadata vec length
+        .checked_add(128)
+        .ok_or(SssError::Overflow)?; // padding for future fields
 
     let rent = &ctx.accounts.rent;
     // Pre-fund lamports for full eventual size (extensions + metadata)
@@ -155,7 +162,8 @@ pub fn handler(ctx: Context<Initialize>, params: InitializeParams) -> Result<()>
 
     // 3. Initialize transfer hook (if enabled)
     if params.enable_transfer_hook {
-        let hook_program_id = params.transfer_hook_program_id
+        let hook_program_id = params
+            .transfer_hook_program_id
             .ok_or(SssError::ComplianceNotEnabled)?;
         invoke(
             &transfer_hook_instruction::initialize(

@@ -40,7 +40,7 @@ impl StablecoinConfig {
         + 8                    // total_minted
         + 8                    // total_burned
         + 1                    // bump
-        + 64;                  // _reserved
+        + 64; // _reserved
 }
 
 #[account]
@@ -60,7 +60,7 @@ impl MinterConfig {
         + 8                    // quota_total
         + 8                    // quota_remaining
         + 1                    // bump
-        + 64;                  // _reserved
+        + 64; // _reserved
 }
 
 #[account]
@@ -82,7 +82,7 @@ impl RoleAssignment {
         + 32                   // assigned_by
         + 8                    // assigned_at
         + 1                    // bump
-        + 64;                  // _reserved
+        + 64; // _reserved
 }
 
 #[account]
@@ -106,7 +106,7 @@ impl BlacklistEntry {
         + 32                   // blacklisted_by
         + 1                    // active
         + 1                    // bump
-        + 64;                  // _reserved
+        + 64; // _reserved
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]

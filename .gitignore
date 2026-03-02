@@ -1,7 +1,28 @@
+# Build artifacts
 target/
-node_modules/
 dist/
 .anchor/
+*.ll
+
+# Dependencies
+node_modules/
+
+# Environment and secrets
 .env
-*.log
+*.pem
+*.key
+keypair.json
+*-keypair.json
+
+# IDE and tooling
+.vscode/
+.xray/
+.idea/
+
+# OS
 .DS_Store
+*.log
+
+# Project-specific
+IMPLEMENTATION_PROMPT*.md
+package-lock.json

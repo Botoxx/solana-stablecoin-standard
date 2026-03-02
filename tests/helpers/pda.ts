@@ -66,3 +66,17 @@ export const RoleType = {
   Blacklister: 3,
   Seizer: 4,
 } as const;
+
+export const SSS_ORACLE_PROGRAM_ID = new PublicKey(
+  "ADuTfewteACQzaBpxB2ShicPZVgzW21XMA64Y84pg92k"
+);
+
+export function getOracleFeedPda(
+  config: PublicKey,
+  pair: number[] | Uint8Array | Buffer
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("oracle-feed"), config.toBuffer(), Buffer.from(pair)],
+    SSS_ORACLE_PROGRAM_ID
+  );
+}

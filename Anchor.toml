@@ -8,10 +8,16 @@ skip-lint = false
 [programs.localnet]
 sss_token = "Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1"
 transfer_hook = "7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj"
+sss_oracle = "ADuTfewteACQzaBpxB2ShicPZVgzW21XMA64Y84pg92k"
 
 [programs.devnet]
 sss_token = "Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1"
 transfer_hook = "7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj"
+sss_oracle = "ADuTfewteACQzaBpxB2ShicPZVgzW21XMA64Y84pg92k"
+
+[[test.validator.account]]
+address = "13Dqg5ktj6Aj9tBVYCGh8eRd9sTnFYx9cCRVyvXBwJEb"
+filename = "tests/fixtures/mock_switchboard_feed.json"
 
 [registry]
 url = "https://api.apr.dev"

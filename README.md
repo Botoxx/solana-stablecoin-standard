@@ -1,6 +1,6 @@
 # Solana Stablecoin Standard (SSS)
 
-An open-source SDK and standardized presets for stablecoins on Solana, built on Token-2022 extensions. Two Anchor programs, a TypeScript SDK, an admin CLI, and Docker-containerized backend services provide a complete infrastructure for issuing and managing stablecoins -- from minimal DAO tokens to regulatory-grade assets.
+An open-source SDK and standardized presets for stablecoins on Solana, built on Token-2022 extensions. Three Anchor programs, a TypeScript SDK, an admin CLI, and Docker-containerized backend services provide a complete infrastructure for issuing and managing stablecoins -- from minimal DAO tokens to regulatory-grade assets.
 
 ## Program IDs (Devnet)
 
@@ -8,6 +8,7 @@ An open-source SDK and standardized presets for stablecoins on Solana, built on 
 |---------|-----|
 | `sss_token` | [`Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1`](https://explorer.solana.com/address/Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1?cluster=devnet) |
 | `transfer_hook` | [`7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj`](https://explorer.solana.com/address/7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj?cluster=devnet) |
+| `sss_oracle` | [`ADuTfewteACQzaBpxB2ShicPZVgzW21XMA64Y84pg92k`](https://explorer.solana.com/address/ADuTfewteACQzaBpxB2ShicPZVgzW21XMA64Y84pg92k?cluster=devnet) |
 
 ### Example Transactions (Devnet)
 
@@ -24,6 +25,7 @@ Demo mint: [`AHAZWMZuSRPA94qyEzN7H6BsrMwnTr3ZofeXsUZ6wUms`](https://explorer.sol
 ```
 Layer 3 (Presets)     SSS-1 (Minimal)  |  SSS-2 (Compliant)
 Layer 2 (Modules)     Compliance: transfer hooks, blacklists, permanent delegate
+                      Oracle: Switchboard On-Demand + manual price feeds (non-USD pegs)
 Layer 1 (Base SDK)    Token creation, mint/freeze authorities, RBAC, metadata
 ```
 
@@ -36,7 +38,7 @@ Layer 1 (Base SDK)    Token creation, mint/freeze authorities, RBAC, metadata
 ```bash
 # Prerequisites: Anchor 0.31+, Solana CLI, Node.js 18+, Yarn
 
-# Build and run all 66 integration tests
+# Build and run all 88 integration tests
 anchor build && anchor test
 
 # Deploy to devnet
@@ -49,6 +51,7 @@ anchor deploy --provider.cluster devnet
 programs/
   sss-token/          Anchor program -- both presets via StablecoinConfig flags
   transfer-hook/      SSS-2 transfer hook -- blacklist + pause enforcement
+  sss-oracle/         Oracle module -- Switchboard + manual price feeds
 sdk/                  TypeScript SDK (@stbr/sss-token)
 cli/                  Admin CLI (sss-token)
 services/
@@ -56,7 +59,7 @@ services/
   mint-burn/          Mint/burn coordination service (port 3002)
   compliance/         Blacklist management, OFAC screening (port 3003)
   webhook/            Event subscription delivery (port 3004)
-tests/                Integration tests (4 test files, 66 tests)
+tests/                Integration tests (5 test files, 88 tests)
 docs/                 Documentation suite
 ```
 
@@ -142,6 +145,7 @@ All services expose `/health` endpoints and use structured JSON logging.
 | [SSS-2](docs/SSS-2.md) | Compliant preset specification |
 | [Compliance](docs/COMPLIANCE.md) | GENIUS Act mapping, OFAC integration, audit trail |
 | [API Reference](docs/API.md) | Backend service REST endpoints |
+| [Oracle](docs/ORACLE.md) | Oracle integration for non-USD pegged stablecoins |
 | [Specification](docs/SPECIFICATION.md) | Original bounty specification |
 
 ## License

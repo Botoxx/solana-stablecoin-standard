@@ -2,6 +2,7 @@
 members = [
     "programs/sss-token",
     "programs/transfer-hook",
+    "programs/sss-oracle",
 ]
 exclude = ["tui"]
 resolver = "2"

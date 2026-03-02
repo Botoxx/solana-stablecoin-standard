@@ -50,7 +50,12 @@ async fn main() {
     // Install panic hook that restores terminal first
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let _ = tui_backend::restore();
+        if let Err(e) = tui_backend::restore() {
+            let _ = std::io::Write::write_all(
+                &mut std::io::stderr(),
+                format!("\nTerminal restore failed: {e}\n").as_bytes(),
+            );
+        }
         original_hook(info);
     }));
 
@@ -348,15 +353,25 @@ fn execute_confirm(
             let tx2 = tx.clone();
             let kp_bytes = keypair.to_bytes();
             tokio::spawn(async move {
+                use zeroize::Zeroize;
+                let mut kp_bytes = kp_bytes;
                 let kp = match solana_sdk::signer::keypair::Keypair::try_from(kp_bytes.as_ref()) {
-                    Ok(kp) => kp,
+                    Ok(kp) => {
+                        kp_bytes.zeroize();
+                        kp
+                    }
                     Err(e) => {
-                        let _ = tx2.send(AppEvent::TxResult(Err(format!("Keypair error: {e}"))));
+                        kp_bytes.zeroize();
+                        if tx2.send(AppEvent::TxResult(Err(format!("Keypair error: {e}")))).is_err() {
+                            eprintln!("Warning: keypair error dropped (app shutting down): {e}");
+                        }
                         return;
                     }
                 };
                 let result = rpc2.send_and_confirm(&ixs, &kp).await;
-                let _ = tx2.send(AppEvent::TxResult(result));
+                if let Err(unsent) = tx2.send(AppEvent::TxResult(result)) {
+                    eprintln!("Warning: TxResult dropped (app shutting down): {:?}", unsent.0);
+                }
             });
         }
         Err(e) => {

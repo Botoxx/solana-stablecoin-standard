@@ -58,14 +58,23 @@ impl SolanaRpc {
         config_pda: &Pubkey,
     ) -> Result<Option<accounts::StablecoinConfig>, String> {
         let data = self.fetch_account_data(config_pda).await?;
-        Ok(data.and_then(|d| accounts::parse_stablecoin_config(&d)))
+        match data {
+            None => Ok(None),
+            Some(d) => match accounts::parse_stablecoin_config(&d) {
+                Some(cfg) => Ok(Some(cfg)),
+                None => Err(format!(
+                    "Config account {config_pda} exists ({} bytes) but failed to parse — possible schema mismatch",
+                    d.len()
+                )),
+            },
+        }
     }
 
     /// Fetch all MinterConfig accounts filtered by config PDA.
     pub async fn fetch_all_minters(
         &self,
         config_pda: &Pubkey,
-    ) -> Result<Vec<accounts::MinterConfig>, String> {
+    ) -> Result<(Vec<accounts::MinterConfig>, usize), String> {
         let disc = accounts::minter_config_disc();
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, disc.to_vec())),
@@ -83,7 +92,7 @@ impl SolanaRpc {
     pub async fn fetch_all_roles(
         &self,
         config_pda: &Pubkey,
-    ) -> Result<Vec<accounts::RoleAssignment>, String> {
+    ) -> Result<(Vec<accounts::RoleAssignment>, usize), String> {
         let disc = accounts::role_assignment_disc();
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, disc.to_vec())),
@@ -101,7 +110,7 @@ impl SolanaRpc {
     pub async fn fetch_all_blacklist(
         &self,
         config_pda: &Pubkey,
-    ) -> Result<Vec<accounts::BlacklistEntry>, String> {
+    ) -> Result<(Vec<accounts::BlacklistEntry>, usize), String> {
         let disc = accounts::blacklist_entry_disc();
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, disc.to_vec())),
@@ -118,7 +127,7 @@ impl SolanaRpc {
     /// Fetch all token holders for a given mint (Token-2022).
     /// Parses mint(0..32), owner(32..64), amount(64..72), state(108) from raw account data.
     /// No dataSize filter — Token-2022 accounts with extensions are larger than 165 bytes.
-    pub async fn fetch_holders(&self, mint: &Pubkey) -> Result<Vec<HolderInfo>, String> {
+    pub async fn fetch_holders(&self, mint: &Pubkey) -> Result<(Vec<HolderInfo>, usize), String> {
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, mint.to_bytes().to_vec())),
         ];
@@ -139,10 +148,15 @@ impl SolanaRpc {
             .await
             .map_err(|e| format!("RPC error fetching holders: {e}"))?;
 
-        Ok(accounts
-            .into_iter()
-            .filter_map(|(_, acct)| parse_holder_from_data(&acct.data))
-            .collect())
+        let mut results = Vec::new();
+        let mut failures = 0usize;
+        for (_, acct) in accounts {
+            match parse_holder_from_data(&acct.data) {
+                Some(h) => results.push(h),
+                None => failures += 1,
+            }
+        }
+        Ok((results, failures))
     }
 
     /// Fetch token supply from the mint account.
@@ -248,8 +262,10 @@ impl SolanaRpc {
                 }
             }
             Err(e) => {
-                // Simulation RPC call itself failed — warn but still attempt send
-                eprintln!("Warning: pre-flight simulation failed ({e}), sending without simulation");
+                // Simulation RPC call itself failed — do NOT send blind
+                return Err(format!(
+                    "Pre-flight simulation failed: {e}. Transaction not sent — press 'r' to refresh and retry."
+                ));
             }
         }
 
@@ -272,12 +288,14 @@ impl SolanaRpc {
         }
     }
 
+    /// Returns (parsed_items, parse_failure_count). Parse failures are accounts that
+    /// matched the RPC filters but couldn't be deserialized — possibly a schema mismatch.
     async fn fetch_program_accounts_parsed<T, F>(
         &self,
         program_id: Pubkey,
         filters: Vec<RpcFilterType>,
         parser: F,
-    ) -> Result<Vec<T>, String>
+    ) -> Result<(Vec<T>, usize), String>
     where
         F: Fn(&[u8]) -> Option<T>,
     {
@@ -297,10 +315,15 @@ impl SolanaRpc {
             .await
             .map_err(|e| format!("RPC error: {e}"))?;
 
-        Ok(accounts
-            .into_iter()
-            .filter_map(|(_, acct)| parser(&acct.data))
-            .collect())
+        let mut results = Vec::new();
+        let mut failures = 0usize;
+        for (_, acct) in accounts {
+            match parser(&acct.data) {
+                Some(parsed) => results.push(parsed),
+                None => failures += 1,
+            }
+        }
+        Ok((results, failures))
     }
 }
 
@@ -418,19 +441,28 @@ pub async fn fetch_all_data(rpc: &SolanaRpc, config_pda: &Pubkey) -> RpcData {
         );
 
         match minters {
-            Ok(v) => data.minters = v,
+            Ok((v, f)) => {
+                data.minters = v;
+                if f > 0 { data.fetch_errors.push(format!("Minters: {f} account(s) failed to parse")); }
+            }
             Err(e) => data.fetch_errors.push(format!("Minters: {e}")),
         }
         match roles {
-            Ok(v) => data.roles = v,
+            Ok((v, f)) => {
+                data.roles = v;
+                if f > 0 { data.fetch_errors.push(format!("Roles: {f} account(s) failed to parse")); }
+            }
             Err(e) => data.fetch_errors.push(format!("Roles: {e}")),
         }
         match blacklist {
-            Ok(v) => data.blacklist = v,
+            Ok((v, f)) => {
+                data.blacklist = v;
+                if f > 0 { data.fetch_errors.push(format!("Blacklist: {f} account(s) failed to parse — possible schema change")); }
+            }
             Err(e) => data.fetch_errors.push(format!("Blacklist: {e}")),
         }
         match holders {
-            Ok(v) => data.holders = v,
+            Ok((v, _)) => data.holders = v, // uninitialized token accounts are expected parse "failures"
             // getProgramAccounts for Token-2022 is disabled on most public RPC nodes
             // (secondary index exclusion). This is expected — holders tab just stays empty.
             Err(e) if e.contains("secondary indexes") || e.contains("excluded from account") => {}

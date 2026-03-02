@@ -27,9 +27,10 @@ pub fn spawn_listener(ws_url: &str, tx: mpsc::UnboundedSender<AppEvent>) {
                         "WebSocket disconnected (attempt {retries}/10): {e}"
                     )));
                     if retries > 10 {
-                        let _ = tx.send(AppEvent::WsError(
-                            "WebSocket permanently disconnected after 10 retries. Press 'r' to refresh data manually.".into()
-                        ));
+                        let msg = "WebSocket permanently disconnected after 10 retries. Press 'r' to refresh data manually.";
+                        if tx.send(AppEvent::WsError(msg.into())).is_err() {
+                            eprintln!("{msg}");
+                        }
                         break;
                     }
                     let delay = std::cmp::min(5 * retries, 30);

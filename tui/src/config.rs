@@ -46,12 +46,17 @@ struct SolanaCliConfig {
 impl SolanaCliConfig {
     fn load() -> Self {
         // Solana CLI always uses ~/.config/solana/cli/config.yml regardless of platform
-        let path = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".config")
-            .join("solana")
-            .join("cli")
-            .join("config.yml");
+        let path = match dirs::home_dir() {
+            Some(home) => home,
+            None => {
+                eprintln!("Warning: cannot determine home directory for Solana CLI config");
+                PathBuf::from(".")
+            }
+        }
+        .join(".config")
+        .join("solana")
+        .join("cli")
+        .join("config.yml");
 
         let defaults = Self {
             rpc_url: "https://api.devnet.solana.com".into(),
@@ -115,10 +120,15 @@ fn rpc_to_ws(rpc_url: &str) -> String {
 }
 
 fn config_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join("sss-tui")
+    match dirs::home_dir() {
+        Some(home) => home,
+        None => {
+            eprintln!("Warning: cannot determine home directory, config saved relative to CWD");
+            PathBuf::from(".")
+        }
+    }
+    .join(".config")
+    .join("sss-tui")
 }
 
 fn config_path() -> PathBuf {

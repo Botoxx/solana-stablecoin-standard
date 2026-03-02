@@ -37,22 +37,38 @@ impl SolanaRpc {
         }
     }
 
-    pub async fn fetch_account_data(&self, pubkey: &Pubkey) -> Option<Vec<u8>> {
-        self.client.get_account_data(pubkey).await.ok()
+    /// Fetch raw account data. Returns Ok(None) if account doesn't exist,
+    /// Err if RPC fails for other reasons (network, rate limit, etc.).
+    pub async fn fetch_account_data(&self, pubkey: &Pubkey) -> Result<Option<Vec<u8>>, String> {
+        match self.client.get_account_data(pubkey).await {
+            Ok(data) => Ok(Some(data)),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("AccountNotFound") || msg.contains("could not find") {
+                    Ok(None)
+                } else {
+                    Err(format!("RPC error fetching {pubkey}: {msg}"))
+                }
+            }
+        }
     }
 
-    pub async fn fetch_config(&self, config_pda: &Pubkey) -> Option<accounts::StablecoinConfig> {
+    pub async fn fetch_config(
+        &self,
+        config_pda: &Pubkey,
+    ) -> Result<Option<accounts::StablecoinConfig>, String> {
         let data = self.fetch_account_data(config_pda).await?;
-        accounts::parse_stablecoin_config(&data)
+        Ok(data.and_then(|d| accounts::parse_stablecoin_config(&d)))
     }
 
     /// Fetch all MinterConfig accounts filtered by config PDA.
-    pub async fn fetch_all_minters(&self, config_pda: &Pubkey) -> Vec<accounts::MinterConfig> {
+    pub async fn fetch_all_minters(
+        &self,
+        config_pda: &Pubkey,
+    ) -> Result<Vec<accounts::MinterConfig>, String> {
         let disc = accounts::minter_config_disc();
         let filters = vec![
-            // Discriminator at offset 0
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, disc.to_vec())),
-            // config pubkey at offset 8
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(8, config_pda.to_bytes().to_vec())),
         ];
         self.fetch_program_accounts_parsed(
@@ -64,7 +80,10 @@ impl SolanaRpc {
     }
 
     /// Fetch all RoleAssignment accounts filtered by config PDA.
-    pub async fn fetch_all_roles(&self, config_pda: &Pubkey) -> Vec<accounts::RoleAssignment> {
+    pub async fn fetch_all_roles(
+        &self,
+        config_pda: &Pubkey,
+    ) -> Result<Vec<accounts::RoleAssignment>, String> {
         let disc = accounts::role_assignment_disc();
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, disc.to_vec())),
@@ -79,7 +98,10 @@ impl SolanaRpc {
     }
 
     /// Fetch all BlacklistEntry accounts filtered by config PDA.
-    pub async fn fetch_all_blacklist(&self, config_pda: &Pubkey) -> Vec<accounts::BlacklistEntry> {
+    pub async fn fetch_all_blacklist(
+        &self,
+        config_pda: &Pubkey,
+    ) -> Result<Vec<accounts::BlacklistEntry>, String> {
         let disc = accounts::blacklist_entry_disc();
         let filters = vec![
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, disc.to_vec())),
@@ -96,9 +118,8 @@ impl SolanaRpc {
     /// Fetch all token holders for a given mint (Token-2022).
     /// Parses mint(0..32), owner(32..64), amount(64..72), state(108) from raw account data.
     /// No dataSize filter — Token-2022 accounts with extensions are larger than 165 bytes.
-    pub async fn fetch_holders(&self, mint: &Pubkey) -> Vec<HolderInfo> {
+    pub async fn fetch_holders(&self, mint: &Pubkey) -> Result<Vec<HolderInfo>, String> {
         let filters = vec![
-            // Mint at offset 0 in Token account data
             RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, mint.to_bytes().to_vec())),
         ];
 
@@ -116,29 +137,30 @@ impl SolanaRpc {
             .client
             .get_program_accounts_with_config(&pda::TOKEN_2022_PROGRAM_ID, config)
             .await
-            .unwrap_or_default();
+            .map_err(|e| format!("RPC error fetching holders: {e}"))?;
 
-        accounts
+        Ok(accounts
             .into_iter()
             .filter_map(|(_, acct)| parse_holder_from_data(&acct.data))
-            .collect()
+            .collect())
     }
 
     /// Fetch token supply from the mint account.
-    pub async fn fetch_supply(&self, mint: &Pubkey) -> Option<u64> {
+    pub async fn fetch_supply(&self, mint: &Pubkey) -> Result<Option<u64>, String> {
         let data = self.fetch_account_data(mint).await?;
-        parse_supply_from_data(&data)
+        Ok(data.and_then(|d| parse_supply_from_data(&d)))
     }
 
     /// Fetch token name and symbol from Token-2022 metadata extension.
-    /// The metadata is embedded via MetadataPointer → TokenMetadata.
-    /// We parse the TLV extension data to find name and symbol.
-    pub async fn fetch_token_metadata(&self, mint: &Pubkey) -> (Option<String>, Option<String>) {
-        let data = match self.fetch_account_data(mint).await {
+    pub async fn fetch_token_metadata(
+        &self,
+        mint: &Pubkey,
+    ) -> Result<(Option<String>, Option<String>), String> {
+        let data = match self.fetch_account_data(mint).await? {
             Some(d) => d,
-            None => return (None, None),
+            None => return Ok((None, None)),
         };
-        parse_token_metadata(&data)
+        Ok(parse_token_metadata(&data))
     }
 
     /// Send and confirm a transaction with one or more instructions.
@@ -147,13 +169,7 @@ impl SolanaRpc {
         ixs: &[Instruction],
         signer: &Keypair,
     ) -> std::result::Result<String, String> {
-        // Log signer and all accounts for diagnostics
         let signer_pk = signer.pubkey();
-        let signer_balance = self
-            .client
-            .get_balance(&signer_pk)
-            .await
-            .unwrap_or(0);
 
         let recent_blockhash = self
             .client
@@ -179,51 +195,65 @@ impl SolanaRpc {
             .simulate_transaction_with_config(&tx, sim_config)
             .await;
 
-        if let Ok(ref resp) = sim {
-            if let Some(ref err) = resp.value.err {
-                let err_str = format!("{err:?}");
-                let logs = resp
-                    .value
-                    .logs
-                    .as_ref()
-                    .map(|l| l.join("\n"))
-                    .unwrap_or_default();
+        match &sim {
+            Ok(resp) => {
+                if let Some(ref err) = resp.value.err {
+                    let err_str = format!("{err:?}");
+                    let logs = resp
+                        .value
+                        .logs
+                        .as_ref()
+                        .map(|l| l.join("\n"))
+                        .unwrap_or_default();
 
-                // Try custom program error from simulation error
-                if let Some(hex_start) = err_str.find("Custom(") {
-                    let after = &err_str[hex_start + 7..];
-                    if let Some(end) = after.find(')') {
-                        if let Ok(code) = after[..end].parse::<u32>() {
-                            return Err(crate::error::error_message(code).to_string());
+                    // Try custom program error from simulation error
+                    if let Some(hex_start) = err_str.find("Custom(") {
+                        let after = &err_str[hex_start + 7..];
+                        if let Some(end) = after.find(')') {
+                            if let Ok(code) = after[..end].parse::<u32>() {
+                                return Err(crate::error::error_message(code).to_string());
+                            }
                         }
                     }
-                }
 
-                // For AccountNotFound, add signer diagnostic
-                if err_str.contains("AccountNotFound") {
-                    return Err(format!(
-                        "AccountNotFound — signer: {} (balance: {} lamports). Logs: {}",
-                        signer_pk,
-                        signer_balance,
-                        if logs.is_empty() { "none".to_string() } else { logs }
-                    ));
-                }
+                    // For AccountNotFound, fetch signer balance for diagnostics
+                    if err_str.contains("AccountNotFound") {
+                        let signer_balance = self
+                            .client
+                            .get_balance(&signer_pk)
+                            .await
+                            .map(|b| format!("{b}"))
+                            .unwrap_or_else(|_| "unknown".into());
+                        let signer_short = crate::theme::truncate_pubkey(
+                            &signer_pk.to_string(),
+                            4,
+                        );
+                        return Err(format!(
+                            "AccountNotFound — signer: {signer_short} (balance: {signer_balance} lamports). Logs: {}",
+                            if logs.is_empty() { "none".to_string() } else { logs }
+                        ));
+                    }
 
-                let detail = if logs.is_empty() {
-                    err_str
-                } else {
-                    let last_log = logs
-                        .lines()
-                        .rev()
-                        .find(|l| l.contains("Error") || l.contains("failed"))
-                        .unwrap_or(&err_str);
-                    last_log.to_string()
-                };
-                return Err(detail);
+                    let detail = if logs.is_empty() {
+                        err_str
+                    } else {
+                        let last_log = logs
+                            .lines()
+                            .rev()
+                            .find(|l| l.contains("Error") || l.contains("failed"))
+                            .unwrap_or(&err_str);
+                        last_log.to_string()
+                    };
+                    return Err(detail);
+                }
+            }
+            Err(e) => {
+                // Simulation RPC call itself failed — warn but still attempt send
+                eprintln!("Warning: pre-flight simulation failed ({e}), sending without simulation");
             }
         }
 
-        // Simulation passed — send for real
+        // Simulation passed (or was skipped) — send for real
         match self.client.send_and_confirm_transaction(&tx).await {
             Ok(sig) => Ok(sig.to_string()),
             Err(e) => {
@@ -247,7 +277,7 @@ impl SolanaRpc {
         program_id: Pubkey,
         filters: Vec<RpcFilterType>,
         parser: F,
-    ) -> Vec<T>
+    ) -> Result<Vec<T>, String>
     where
         F: Fn(&[u8]) -> Option<T>,
     {
@@ -265,12 +295,12 @@ impl SolanaRpc {
             .client
             .get_program_accounts_with_config(&program_id, config)
             .await
-            .unwrap_or_default();
+            .map_err(|e| format!("RPC error: {e}"))?;
 
-        accounts
+        Ok(accounts
             .into_iter()
             .filter_map(|(_, acct)| parser(&acct.data))
-            .collect()
+            .collect())
     }
 }
 
@@ -361,11 +391,18 @@ fn read_borsh_string(data: &[u8], cursor: &mut usize) -> Option<String> {
 }
 
 /// Fetch all data for a config PDA in one pass.
+/// Collects non-fatal RPC errors in `fetch_errors` instead of silently returning empty lists.
 pub async fn fetch_all_data(rpc: &SolanaRpc, config_pda: &Pubkey) -> RpcData {
     let mut data = RpcData::default();
 
     // Fetch config first to get mint
-    data.config = rpc.fetch_config(config_pda).await;
+    match rpc.fetch_config(config_pda).await {
+        Ok(cfg) => data.config = cfg,
+        Err(e) => {
+            data.fetch_errors.push(format!("Config: {e}"));
+            return data;
+        }
+    }
 
     if let Some(ref cfg) = data.config {
         let mint = cfg.mint;
@@ -380,13 +417,36 @@ pub async fn fetch_all_data(rpc: &SolanaRpc, config_pda: &Pubkey) -> RpcData {
             rpc.fetch_token_metadata(&mint),
         );
 
-        data.minters = minters;
-        data.roles = roles;
-        data.blacklist = blacklist;
-        data.holders = holders;
-        data.supply = supply;
-        data.token_name = metadata.0;
-        data.token_symbol = metadata.1;
+        match minters {
+            Ok(v) => data.minters = v,
+            Err(e) => data.fetch_errors.push(format!("Minters: {e}")),
+        }
+        match roles {
+            Ok(v) => data.roles = v,
+            Err(e) => data.fetch_errors.push(format!("Roles: {e}")),
+        }
+        match blacklist {
+            Ok(v) => data.blacklist = v,
+            Err(e) => data.fetch_errors.push(format!("Blacklist: {e}")),
+        }
+        match holders {
+            Ok(v) => data.holders = v,
+            // getProgramAccounts for Token-2022 is disabled on most public RPC nodes
+            // (secondary index exclusion). This is expected — holders tab just stays empty.
+            Err(e) if e.contains("secondary indexes") || e.contains("excluded from account") => {}
+            Err(e) => data.fetch_errors.push(format!("Holders: {e}")),
+        }
+        match supply {
+            Ok(v) => data.supply = v,
+            Err(e) => data.fetch_errors.push(format!("Supply: {e}")),
+        }
+        match metadata {
+            Ok((name, symbol)) => {
+                data.token_name = name;
+                data.token_symbol = symbol;
+            }
+            Err(e) => data.fetch_errors.push(format!("Metadata: {e}")),
+        }
     }
 
     data

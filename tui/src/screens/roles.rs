@@ -231,7 +231,8 @@ fn render_minters_table(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(Paragraph::new(label), minter_rows[0]);
 
         let used = minter.quota_total.saturating_sub(minter.quota_remaining);
-        quota_bar::render(f, used, minter.quota_total, minter_rows[1]);
+        let decimals = app.config.as_ref().map_or(0, |c| c.decimals);
+        quota_bar::render(f, used, minter.quota_total, decimals, minter_rows[1]);
     }
 }
 
@@ -274,6 +275,16 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
                 RolesTab::Roles => RolesTab::Minters,
                 RolesTab::Minters => RolesTab::Roles,
             };
+            // Clamp selection to new table's bounds
+            let len = match app.roles_tab {
+                RolesTab::Roles => app.roles.len(),
+                RolesTab::Minters => app.minters.len(),
+            };
+            if len > 0 {
+                app.roles_selected = app.roles_selected.min(len - 1);
+            } else {
+                app.roles_selected = 0;
+            }
         }
         KeyCode::Char('j') | KeyCode::Down => {
             if app.roles_tab == RolesTab::Roles && !app.roles.is_empty() {

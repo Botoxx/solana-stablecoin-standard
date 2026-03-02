@@ -27,7 +27,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let decimals = app.config.as_ref().map(|c| c.decimals).unwrap_or(6);
-    let total_supply = app.supply.unwrap_or(1);
+    let total_supply = app.supply;
 
     let header = Row::new(vec![
         Cell::from(Span::styled("#", theme::dim())),
@@ -37,11 +37,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         Cell::from(Span::styled("Status", theme::dim())),
     ]);
 
-    // Sort by balance descending
-    let mut sorted = app.holders.clone();
-    sorted.sort_by(|a, b| b.balance.cmp(&a.balance));
-
-    let rows: Vec<Row> = sorted
+    // Holders are pre-sorted by balance desc on data arrival (main.rs RpcUpdate handler)
+    let rows: Vec<Row> = app
+        .holders
         .iter()
         .enumerate()
         .map(|(i, holder)| {
@@ -51,10 +49,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                 theme::base()
             };
 
-            let pct = if total_supply > 0 {
-                (holder.balance as f64 / total_supply as f64) * 100.0
-            } else {
-                0.0
+            let pct = match total_supply {
+                Some(s) if s > 0 => (holder.balance as f64 / s as f64) * 100.0,
+                _ => 0.0, // supply unknown or zero
             };
 
             let status = if holder.frozen {

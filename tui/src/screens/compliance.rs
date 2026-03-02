@@ -288,44 +288,46 @@ pub fn handle_input(app: &mut App, key: crossterm::event::KeyEvent) {
 
 fn submit_compliance_action(app: &mut App) {
     let address = app.compliance_fields.first().cloned().unwrap_or_default();
-    let reason = app.compliance_fields.get(1).cloned().unwrap_or_default();
-    let amount_str = app.compliance_fields.get(2).cloned().unwrap_or_default();
 
     if address.is_empty() {
         app.set_toast(Toast::error("Enter address"));
         return;
     }
 
-    // If amount is filled, this is a seize action
-    if !amount_str.is_empty() {
-        let amount: u64 = match amount_str.parse() {
-            Ok(a) if a > 0 => a,
-            _ => {
-                app.set_toast(Toast::error("Invalid amount"));
+    // Dispatch based on compliance_mode, not field contents
+    match app.compliance_mode {
+        ComplianceMode::Seize => {
+            let amount_str = app.compliance_fields.get(2).cloned().unwrap_or_default();
+            let amount: u64 = match amount_str.parse() {
+                Ok(a) if a > 0 => a,
+                _ => {
+                    app.set_toast(Toast::error("Invalid amount"));
+                    return;
+                }
+            };
+            app.confirm = Some(ConfirmDialog {
+                title: "Seize Tokens".into(),
+                body: format!("Seize {} tokens from {}", amount, &address),
+                on_confirm: ConfirmAction::Seize {
+                    wallet: address,
+                    amount,
+                },
+                selected: true,
+            });
+        }
+        ComplianceMode::Blacklist => {
+            let reason = app.compliance_fields.get(1).cloned().unwrap_or_default();
+            if reason.is_empty() {
+                app.set_toast(Toast::error("Reason required"));
                 return;
             }
-        };
-        app.confirm = Some(ConfirmDialog {
-            title: "Seize Tokens".into(),
-            body: format!("Seize {} tokens from {}", amount, &address),
-            on_confirm: ConfirmAction::Seize {
-                wallet: address,
-                amount,
-            },
-            selected: true,
-        });
-    } else {
-        // Blacklist add
-        if reason.is_empty() {
-            app.set_toast(Toast::error("Reason required"));
-            return;
+            app.confirm = Some(ConfirmDialog {
+                title: "Add to Blacklist".into(),
+                body: format!("Blacklist {} ({})", &address, &reason),
+                on_confirm: ConfirmAction::AddBlacklist { address, reason },
+                selected: true,
+            });
         }
-        app.confirm = Some(ConfirmDialog {
-            title: "Add to Blacklist".into(),
-            body: format!("Blacklist {} ({})", &address, &reason),
-            on_confirm: ConfirmAction::AddBlacklist { address, reason },
-            selected: true,
-        });
     }
 
     app.input_mode = InputMode::Normal;

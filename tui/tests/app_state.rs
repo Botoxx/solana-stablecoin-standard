@@ -182,10 +182,11 @@ fn test_truncate_pubkey_short() {
 
 #[test]
 fn test_format_amount_with_decimals() {
-    assert_eq!(theme::format_amount(1_000_000, 6), "1.000000");
-    assert_eq!(theme::format_amount(1_500_000, 6), "1.500000");
-    assert_eq!(theme::format_amount(500, 6), "0.000500");
-    assert_eq!(theme::format_amount(0, 6), "0.000000");
+    // Trailing zeros trimmed, min 2 decimal places kept
+    assert_eq!(theme::format_amount(1_000_000, 6), "1.00");
+    assert_eq!(theme::format_amount(1_500_000, 6), "1.50");
+    assert_eq!(theme::format_amount(500, 6), "0.0005");
+    assert_eq!(theme::format_amount(0, 6), "0.00");
 }
 
 #[test]
@@ -198,6 +199,21 @@ fn test_format_amount_zero_decimals() {
 fn test_format_amount_two_decimals() {
     assert_eq!(theme::format_amount(150, 2), "1.50");
     assert_eq!(theme::format_amount(1, 2), "0.01");
+}
+
+#[test]
+fn test_format_amount_thousands_separator() {
+    assert_eq!(theme::format_amount(1_000_000_000_000, 6), "1,000,000.00");
+    assert_eq!(theme::format_amount(1_234_567_890, 6), "1,234.56789");
+    assert_eq!(theme::format_amount(999_999, 6), "0.999999");
+}
+
+#[test]
+fn test_format_amount_real_values() {
+    // Values from devnet screenshot: decimals=6
+    assert_eq!(theme::format_amount(1_000_000_144, 6), "1,000.000144");
+    assert_eq!(theme::format_amount(1_000_000_156, 6), "1,000.000156");
+    assert_eq!(theme::format_amount(12, 6), "0.000012");
 }
 
 #[test]

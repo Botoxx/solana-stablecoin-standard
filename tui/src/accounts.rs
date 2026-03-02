@@ -100,6 +100,19 @@ fn check_disc(data: &[u8], expected: [u8; 8]) -> Option<&[u8]> {
     Some(&data[8..])
 }
 
+/// Bounded string deserialization — checks length prefix before allocating.
+/// Prevents OOM on malformed on-chain data with crafted length fields.
+pub fn bounded_string_deserialize(buf: &mut &[u8], max_len: usize) -> Option<String> {
+    if buf.len() < 4 {
+        return None;
+    }
+    let len = u32::from_le_bytes(buf[..4].try_into().ok()?) as usize;
+    if len > max_len || buf.len() < 4 + len {
+        return None;
+    }
+    String::deserialize(buf).ok()
+}
+
 pub fn parse_stablecoin_config(data: &[u8]) -> Option<StablecoinConfig> {
     let mut buf = check_disc(data, stablecoin_config_disc())?;
     let authority = Pubkey::deserialize(&mut buf).ok()?;
@@ -170,7 +183,7 @@ pub fn parse_blacklist_entry(data: &[u8]) -> Option<BlacklistEntry> {
     let mut buf = check_disc(data, blacklist_entry_disc())?;
     let config = Pubkey::deserialize(&mut buf).ok()?;
     let address = Pubkey::deserialize(&mut buf).ok()?;
-    let reason = String::deserialize(&mut buf).ok()?;
+    let reason = bounded_string_deserialize(&mut buf, 512)?;
     let blacklisted_at = i64::deserialize(&mut buf).ok()?;
     let blacklisted_by = Pubkey::deserialize(&mut buf).ok()?;
     let active = bool::deserialize(&mut buf).ok()?;

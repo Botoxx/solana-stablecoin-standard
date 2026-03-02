@@ -15,13 +15,21 @@ pub fn spawn_listener(ws_url: &str, tx: mpsc::UnboundedSender<AppEvent>) {
         loop {
             match connect_and_listen(&ws_url, &tx, &event_map).await {
                 Ok(()) => {
-                    // Clean disconnect
+                    // Clean disconnect (stream ended)
+                    let _ = tx.send(AppEvent::WsDisconnected(
+                        "WebSocket stream ended".into(),
+                    ));
                     break;
                 }
-                Err(_) => {
+                Err(e) => {
                     retries += 1;
+                    let _ = tx.send(AppEvent::WsDisconnected(format!(
+                        "WebSocket disconnected (attempt {retries}/10): {e}"
+                    )));
                     if retries > 10 {
-                        tracing::warn!("WebSocket: giving up after 10 retries");
+                        let _ = tx.send(AppEvent::WsError(
+                            "WebSocket permanently disconnected after 10 retries. Press 'r' to refresh data manually.".into()
+                        ));
                         break;
                     }
                     let delay = std::cmp::min(5 * retries, 30);
@@ -53,15 +61,36 @@ async fn connect_and_listen(
         )
         .await?;
 
+    // Connected successfully — notify UI and reset retry logic on caller side
+    // (retries are reset by the caller detecting a successful connection via WsEvent arrival)
+
     use futures_util::StreamExt;
     while let Some(log_result) = stream.next().await {
         let sig = log_result.value.signature.clone();
         for line in &log_result.value.logs {
             if let Some(b64) = line.strip_prefix("Program data: ") {
                 if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) {
-                    if let Some(mut event_data) = events::parse_event(&bytes, event_map) {
-                        event_data.tx_sig = Some(sig.clone());
-                        let _ = tx.send(AppEvent::WsEvent(event_data));
+                    match events::parse_event(&bytes, event_map) {
+                        Some(mut event_data) => {
+                            event_data.tx_sig = Some(sig.clone());
+                            let _ = tx.send(AppEvent::WsEvent(event_data));
+                        }
+                        None if bytes.len() >= 8 => {
+                            // Unknown discriminator — surface as unknown event
+                            let disc_hex: String = bytes[..8]
+                                .iter()
+                                .map(|b| format!("{b:02x}"))
+                                .collect();
+                            let unknown = events::EventData {
+                                name: format!("Unknown({})", &disc_hex[..8.min(disc_hex.len())]),
+                                authority: "---".into(),
+                                timestamp: 0,
+                                fields: vec![("raw_size".into(), bytes.len().to_string())],
+                                tx_sig: Some(sig.clone()),
+                            };
+                            let _ = tx.send(AppEvent::WsEvent(unknown));
+                        }
+                        _ => {} // Too short to be an event
                     }
                 }
             }

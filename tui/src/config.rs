@@ -61,7 +61,14 @@ impl SolanaCliConfig {
 
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
-            Err(_) => return defaults,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return defaults,
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not read Solana config {}: {e}. Using devnet defaults.",
+                    path.display()
+                );
+                return defaults;
+            }
         };
 
         let mut rpc_url = None;
@@ -162,7 +169,13 @@ impl TuiConfig {
 
         let tmp = config_dir().join("config.toml.tmp");
         let path = config_path();
-        std::fs::write(&tmp, &content)
+        // Remove stale tmp to avoid following symlinks (create_new fails on existing files)
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true) // Fails if file exists (including symlinks) — prevents symlink attacks
+            .open(&tmp)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, content.as_bytes()))
             .map_err(|e| TuiError::Config(format!("write {}: {}", tmp.display(), e)))?;
         std::fs::rename(&tmp, &path)
             .map_err(|e| TuiError::Config(format!("rename to {}: {}", path.display(), e)))?;

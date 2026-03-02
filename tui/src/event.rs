@@ -18,6 +18,10 @@ pub enum AppEvent {
     RpcUpdate(Box<RpcData>),
     /// WebSocket event parsed
     WsEvent(EventData),
+    /// WebSocket disconnected (will retry)
+    WsDisconnected(String),
+    /// WebSocket permanently failed
+    WsError(String),
     /// Transaction result (success sig or error message)
     TxResult(std::result::Result<String, String>),
 }
@@ -33,6 +37,8 @@ pub struct RpcData {
     pub blacklist: Vec<crate::accounts::BlacklistEntry>,
     pub holders: Vec<crate::rpc::HolderInfo>,
     pub supply: Option<u64>,
+    /// Non-fatal RPC errors encountered during fetch.
+    pub fetch_errors: Vec<String>,
 }
 
 pub struct EventLoop {

@@ -69,13 +69,38 @@ pub fn truncate_pubkey(pk: &str, n: usize) -> String {
 }
 
 /// Format a lamports/token amount with decimals.
+/// Thousand separators, trailing zero trimming (min 2 decimal places).
+/// Guards against overflow: 10u64.pow(20+) overflows, so clamp to 19.
 pub fn format_amount(raw: u64, decimals: u8) -> String {
+    if decimals > 19 {
+        return format!("{raw} (raw, decimals={decimals})");
+    }
     let divisor = 10u64.pow(decimals as u32);
     let whole = raw / divisor;
     let frac = raw % divisor;
+
+    let whole_str = thousands_sep(whole);
+
     if decimals == 0 {
-        whole.to_string()
+        whole_str
     } else {
-        format!("{}.{:0>width$}", whole, frac, width = decimals as usize)
+        let frac_str = format!("{:0>width$}", frac, width = decimals as usize);
+        // Trim trailing zeros but keep at least 2 decimal places
+        let min_len = 2.min(decimals as usize);
+        let trimmed = frac_str.trim_end_matches('0');
+        let keep = trimmed.len().max(min_len);
+        format!("{}.{}", whole_str, &frac_str[..keep])
     }
+}
+
+fn thousands_sep(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result
 }

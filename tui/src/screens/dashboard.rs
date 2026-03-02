@@ -10,7 +10,7 @@ use crate::theme;
 use crate::widgets::quota_bar;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
-    if app.config.is_none() {
+    let Some(ref config) = app.config else {
         let msg = Paragraph::new(Span::styled(
             " No config loaded. Pass --config-pda or set in ~/.config/sss-tui/config.toml",
             theme::warning(),
@@ -23,9 +23,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         );
         f.render_widget(msg, area);
         return;
-    }
-
-    let config = app.config.as_ref().unwrap();
+    };
 
     // Top row: Status | Supply | Extensions
     // Bottom: Minter quotas | Recent events
@@ -105,9 +103,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     // -- Supply panel --
     let supply = app.supply.unwrap_or(config.current_supply());
-    let supply_str = theme::format_amount(supply, config.decimals);
-    let minted_str = theme::format_amount(config.total_minted, config.decimals);
-    let burned_str = theme::format_amount(config.total_burned, config.decimals);
+    let symbol = app.token_symbol.as_deref().unwrap_or("tokens");
+    let supply_str = format!("{} {symbol}", theme::format_amount(supply, config.decimals));
+    let minted_str = format!("{} {symbol}", theme::format_amount(config.total_minted, config.decimals));
+    let burned_str = format!("{} {symbol}", theme::format_amount(config.total_burned, config.decimals));
 
     let supply_lines = vec![
         Line::from(""),
@@ -122,10 +121,6 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("  Burned: ", theme::dim()),
             Span::styled(burned_str, theme::danger()),
-        ]),
-        Line::from(vec![
-            Span::styled("Decimals: ", theme::dim()),
-            Span::styled(config.decimals.to_string(), theme::base()),
         ]),
     ];
 
@@ -227,7 +222,8 @@ fn render_minter_quotas(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(Paragraph::new(label), rows[row_idx]);
 
         let used = minter.quota_total.saturating_sub(minter.quota_remaining);
-        quota_bar::render(f, used, minter.quota_total, rows[row_idx + 1]);
+        let decimals = app.config.as_ref().map_or(0, |c| c.decimals);
+        quota_bar::render(f, used, minter.quota_total, decimals, rows[row_idx + 1]);
     }
 }
 

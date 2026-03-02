@@ -227,7 +227,7 @@ fn decode_minter_updated(data: &[u8]) -> Option<EventData> {
     let minter = Pubkey::deserialize(&mut buf).ok()?;
     let quota_total = u64::deserialize(&mut buf).ok()?;
     let quota_remaining = u64::deserialize(&mut buf).ok()?;
-    let action = String::deserialize(&mut buf).ok()?;
+    let action = crate::accounts::bounded_string_deserialize(&mut buf, 64)?;
     let timestamp = i64::deserialize(&mut buf).ok()?;
     Some(EventData {
         name: "MinterUpdated".into(),
@@ -248,7 +248,7 @@ fn decode_role_updated(data: &[u8]) -> Option<EventData> {
     let authority = Pubkey::deserialize(&mut buf).ok()?;
     let address = Pubkey::deserialize(&mut buf).ok()?;
     let role = u8::deserialize(&mut buf).ok()?;
-    let action = String::deserialize(&mut buf).ok()?;
+    let action = crate::accounts::bounded_string_deserialize(&mut buf, 64)?;
     let timestamp = i64::deserialize(&mut buf).ok()?;
     Some(EventData {
         name: "RoleUpdated".into(),
@@ -295,7 +295,7 @@ fn decode_blacklist_add(data: &[u8]) -> Option<EventData> {
     let mut buf = data;
     let authority = Pubkey::deserialize(&mut buf).ok()?;
     let address = Pubkey::deserialize(&mut buf).ok()?;
-    let reason = String::deserialize(&mut buf).ok()?;
+    let reason = crate::accounts::bounded_string_deserialize(&mut buf, 512)?;
     let timestamp = i64::deserialize(&mut buf).ok()?;
     Some(EventData {
         name: "BlacklistAdd".into(),

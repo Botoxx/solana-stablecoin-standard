@@ -501,9 +501,12 @@ fn test_compliance_s_enters_seize_edit() {
 
 #[test]
 fn test_compliance_submit_seize() {
+    use sss_tui::app::ComplianceMode;
+
     let mut app = App::new();
     app.screen = Screen::Compliance;
     app.input_mode = InputMode::Editing;
+    app.compliance_mode = ComplianceMode::Seize;
     app.compliance_fields = vec![
         Pubkey::new_from_array([40; 32]).to_string(),
         String::new(),

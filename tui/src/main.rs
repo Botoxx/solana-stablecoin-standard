@@ -1,4 +1,4 @@
-#![allow(clippy::result_large_err, clippy::large_enum_variant, dead_code)]
+#![allow(clippy::result_large_err, clippy::large_enum_variant)]
 
 mod accounts;
 mod app;
@@ -65,7 +65,13 @@ async fn run() -> error::Result<()> {
     let cli = Cli::parse();
 
     // Load config, apply CLI overrides
-    let mut cfg = TuiConfig::load().unwrap_or_default();
+    let mut cfg = match TuiConfig::load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Warning: config load failed ({e}), using defaults");
+            TuiConfig::default()
+        }
+    };
     cfg.apply_overrides(cli.rpc_url, cli.ws_url, cli.keypair, cli.config_pda);
 
     // Load keypair
@@ -81,16 +87,22 @@ async fn run() -> error::Result<()> {
     let signer_pk = solana_sdk::signer::Signer::pubkey(&keypair).to_string();
     app.signer_display = format!("{}..{}", &signer_pk[..4], &signer_pk[signer_pk.len() - 4..]);
     let event_loop = EventLoop::new();
-    event_loop.spawn_event_task(Duration::from_secs(5));
+    event_loop.spawn_event_task(Duration::from_secs(15));
 
     // Create RPC client
     let rpc = rpc::SolanaRpc::new(&cfg.rpc_url);
 
-    // If we have a config PDA, do initial fetch
-    let config_pda = cfg
-        .config_pda
-        .as_ref()
-        .and_then(|s| s.parse::<solana_sdk::pubkey::Pubkey>().ok());
+    // Parse config PDA, warn if saved value is invalid
+    let config_pda = match cfg.config_pda.as_ref() {
+        Some(s) => match s.parse::<solana_sdk::pubkey::Pubkey>() {
+            Ok(pk) => Some(pk),
+            Err(e) => {
+                eprintln!("Warning: saved config_pda '{s}' is invalid ({e}), ignoring");
+                None
+            }
+        },
+        None => None,
+    };
 
     if let Some(pda) = config_pda {
         let tx = event_loop.tx.clone();
@@ -102,7 +114,7 @@ async fn run() -> error::Result<()> {
     }
 
     // Spawn WebSocket listener if we have a config PDA
-    if let Some(_pda) = config_pda {
+    if config_pda.is_some() {
         pubsub::spawn_listener(&cfg.ws_url, event_loop.tx.clone());
     }
 
@@ -143,13 +155,54 @@ async fn run() -> error::Result<()> {
                     app.minters = data.minters;
                     app.roles = data.roles;
                     app.blacklist = data.blacklist;
-                    app.holders = data.holders;
                     app.supply = data.supply;
                     app.last_refresh = Some(std::time::Instant::now());
+
+                    // Sort holders by balance desc once on arrival (not per-frame)
+                    let mut holders = data.holders;
+                    holders.sort_by(|a, b| b.balance.cmp(&a.balance));
+                    app.holders = holders;
+
+                    // Clamp selection indices to new data bounds
+                    if !app.roles.is_empty() {
+                        app.roles_selected = app.roles_selected.min(app.roles.len() - 1);
+                    } else {
+                        app.roles_selected = 0;
+                    }
+                    if !app.blacklist.is_empty() {
+                        app.compliance_selected =
+                            app.compliance_selected.min(app.blacklist.len() - 1);
+                    } else {
+                        app.compliance_selected = 0;
+                    }
+                    if !app.holders.is_empty() {
+                        app.holders_selected = app.holders_selected.min(app.holders.len() - 1);
+                    } else {
+                        app.holders_selected = 0;
+                    }
+
+                    // Surface non-transient RPC fetch errors as toast
+                    // 429 (rate limit) is expected on public devnet — silently retry on next tick
+                    let actionable: Vec<_> = data.fetch_errors.iter()
+                        .filter(|e| !e.contains("429") && !e.contains("Too Many Requests"))
+                        .collect();
+                    if !actionable.is_empty() {
+                        let msg = actionable.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("; ");
+                        app.set_toast(Toast::error(format!("Fetch errors: {msg}")));
+                    }
                 }
                 AppEvent::WsEvent(event_data) => {
                     app.ws_connected = true;
                     app.push_event(event_data);
+                }
+                AppEvent::WsDisconnected(_) => {
+                    app.ws_connected = false;
+                    // Don't toast every retry — ws_connected=false already shows in status bar.
+                    // WsError will toast when permanently giving up.
+                }
+                AppEvent::WsError(msg) => {
+                    app.ws_connected = false;
+                    app.set_toast(Toast::error(msg));
                 }
                 AppEvent::TxResult(result) => {
                     app.tx_pending = false;
@@ -177,7 +230,9 @@ async fn run() -> error::Result<()> {
     }
 
     // Save config, restore terminal
-    let _ = cfg.save();
+    if let Err(e) = cfg.save() {
+        eprintln!("Warning: failed to save config: {e}");
+    }
     tui_backend::restore()?;
     Ok(())
 }
@@ -293,8 +348,13 @@ fn execute_confirm(
             let tx2 = tx.clone();
             let kp_bytes = keypair.to_bytes();
             tokio::spawn(async move {
-                let kp = solana_sdk::signer::keypair::Keypair::try_from(kp_bytes.as_ref())
-                    .expect("keypair roundtrip");
+                let kp = match solana_sdk::signer::keypair::Keypair::try_from(kp_bytes.as_ref()) {
+                    Ok(kp) => kp,
+                    Err(e) => {
+                        let _ = tx2.send(AppEvent::TxResult(Err(format!("Keypair error: {e}"))));
+                        return;
+                    }
+                };
                 let result = rpc2.send_and_confirm(&ixs, &kp).await;
                 let _ = tx2.send(AppEvent::TxResult(result));
             });

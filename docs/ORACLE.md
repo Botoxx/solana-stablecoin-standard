@@ -2,12 +2,28 @@
 
 ## Overview
 
-The `sss-oracle` program is a standalone Anchor program that provides price feed integration for non-USD pegged stablecoins built with SSS. It supports two feed types:
+SSS's core programs (`sss-token`, `transfer-hook`) handle USD-pegged stablecoins. But stablecoins pegged to other currencies — EUR, BRL, GBP, or CPI-indexed baskets — need a reliable on-chain exchange rate. The `sss-oracle` program provides that price infrastructure.
+
+It is a standalone Anchor program that creates **per-stablecoin, per-pair price feeds** with two source types:
 
 - **Switchboard On-Demand** (type 0) — decentralized oracle feeds for live FX rates (EUR/USD, BRL/USD, etc.)
 - **Manual / CPI-indexed** (type 1) — authority-pushed prices for CPI-indexed or algorithmic pegs
 
 The module is fully independent — zero modifications to `sss-token` or `transfer-hook`. It reads the `StablecoinConfig` authority via raw byte parsing (same pattern as the transfer hook).
+
+## Use Cases & Integration Points
+
+The oracle module provides an **on-chain price source** that other parts of the SSS stack can consume. It does not enforce exchange rates in minting/burning — that business logic is intentionally left to the integrator.
+
+**1. Off-chain mint/burn service** — The `services/mint-burn/` executor processes mint and burn requests. For a EUR-pegged stablecoin, the executor reads the cached EUR/USD price from the oracle feed PDA before minting, converting the fiat deposit amount to the correct token quantity at the current rate. The price is on-chain and verifiable, not pulled from a private API.
+
+**2. Frontend price display** — The SDK's `getCachedPrice()` and `getAllFeeds()` methods let a dashboard show live exchange rates alongside supply stats. The `PriceCachedEvent` provides a history of rate updates.
+
+**3. Audit trail for compliance** — Every `cache_price` and `set_manual_price` call emits a timestamped event. The indexer service can capture these to answer: "at what exchange rate was this mint executed?" — relevant for GENIUS Act compliance certification.
+
+**4. Future on-chain enforcement (CPI)** — The `OracleFeedConfig` PDA is readable by any program. A future version of `sss-token` could accept the oracle feed PDA as a remaining account in `mint`, deserialize the cached price, and enforce a conversion rate on-chain. The account structure, PDA derivation, and staleness metadata are already designed for this.
+
+**5. Permissionless cranking** — `cache_price` requires no signer. Any keeper, bot, or user can refresh the on-chain price by bundling a Switchboard `pullIx` with `cache_price` in a single transaction. This enables decentralized price updates without relying on the issuer's infrastructure.
 
 ## Architecture
 

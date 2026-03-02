@@ -29,6 +29,13 @@ const SWITCHBOARD_MAINNET = new PublicKey(
   "SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv"
 );
 
+// Mock Switchboard feed account pre-loaded via Anchor.toml [[test.validator.account]]
+// Data: discriminator + PullFeedAccountData with value=1.085*10^18, std_dev=0.0005*10^18,
+// num_samples=5, slot=u64::MAX. Owner = SWITCHBOARD_MAINNET.
+const MOCK_SWITCHBOARD_FEED = new PublicKey(
+  "13Dqg5ktj6Aj9tBVYCGh8eRd9sTnFYx9cCRVyvXBwJEb"
+);
+
 describe("sss-oracle", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -496,6 +503,166 @@ describe("sss-oracle", () => {
   // ==================== cache_price ====================
 
   describe("cache_price", () => {
+    const audPair = encodePair("AUD/USD");
+
+    it("caches price from mock Switchboard feed", async () => {
+      // Create a Switchboard feed pointing at the pre-loaded mock account
+      const [audFeedPda] = getOracleFeedPda(configPda, audPair);
+
+      await oracleProgram.methods
+        .initializeFeed({
+          pair: audPair,
+          feedAccount: MOCK_SWITCHBOARD_FEED,
+          feedType: 0,
+          maxStaleness: 4_294_967_295, // u32::MAX — mock slot is u64::MAX so any staleness passes
+          minSamples: 1,
+          maxConfidence: new anchor.BN(100_000),
+          priceDecimals: 6,
+          switchboardProgram: SWITCHBOARD_MAINNET,
+        })
+        .accounts({
+          authority: authority.publicKey,
+          config: configPda,
+          oracleFeed: audFeedPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([authority])
+        .rpc();
+
+      // Cache the price — permissionless, no signer needed
+      await oracleProgram.methods
+        .cachePrice()
+        .accounts({
+          feedAccount: MOCK_SWITCHBOARD_FEED,
+          oracleFeed: audFeedPda,
+        } as any)
+        .rpc();
+
+      // Verify cached price: 1.085 * 10^18 / 10^(18-6) = 1_085_000
+      const feed = await oracleProgram.account.oracleFeedConfig.fetch(audFeedPda);
+      expect(feed.lastCachedPrice.toNumber()).to.equal(1_085_000);
+      expect(feed.lastCachedSlot.toNumber()).to.be.greaterThan(0);
+      expect(feed.lastCachedTs.toNumber()).to.be.greaterThan(0);
+      expect(decodePair(feed.pair)).to.equal("AUD/USD");
+    });
+
+    it("caches correct price with different decimals", async () => {
+      // Create another feed with 8 price_decimals to verify decimal conversion
+      const gbpPair = encodePair("GBP/USD");
+      const [gbpFeedPda] = getOracleFeedPda(configPda, gbpPair);
+
+      await oracleProgram.methods
+        .initializeFeed({
+          pair: gbpPair,
+          feedAccount: MOCK_SWITCHBOARD_FEED,
+          feedType: 0,
+          maxStaleness: 4_294_967_295,
+          minSamples: 1,
+          maxConfidence: new anchor.BN(100_000_000), // scaled for 8 decimals
+          priceDecimals: 8,
+          switchboardProgram: SWITCHBOARD_MAINNET,
+        })
+        .accounts({
+          authority: authority.publicKey,
+          config: configPda,
+          oracleFeed: gbpFeedPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([authority])
+        .rpc();
+
+      await oracleProgram.methods
+        .cachePrice()
+        .accounts({
+          feedAccount: MOCK_SWITCHBOARD_FEED,
+          oracleFeed: gbpFeedPda,
+        } as any)
+        .rpc();
+
+      // 1.085 * 10^18 / 10^(18-8) = 108_500_000
+      const feed = await oracleProgram.account.oracleFeedConfig.fetch(gbpFeedPda);
+      expect(feed.lastCachedPrice.toNumber()).to.equal(108_500_000);
+    });
+
+    it("rejects when confidence exceeds max_confidence", async () => {
+      // Create feed with very tight max_confidence that the mock std_dev will exceed
+      // Mock std_dev = 500_000_000_000_000 (0.0005 * 10^18)
+      // With price_decimals=6: confidence = 500_000_000_000_000 / 10^12 = 500
+      // Set max_confidence = 100 < 500 → should fail
+      const tightPair = encodePair("TIGHT");
+      const [tightFeedPda] = getOracleFeedPda(configPda, tightPair);
+
+      await oracleProgram.methods
+        .initializeFeed({
+          pair: tightPair,
+          feedAccount: MOCK_SWITCHBOARD_FEED,
+          feedType: 0,
+          maxStaleness: 4_294_967_295,
+          minSamples: 1,
+          maxConfidence: new anchor.BN(100), // tighter than mock's std_dev of 500
+          priceDecimals: 6,
+          switchboardProgram: SWITCHBOARD_MAINNET,
+        })
+        .accounts({
+          authority: authority.publicKey,
+          config: configPda,
+          oracleFeed: tightFeedPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([authority])
+        .rpc();
+
+      await assertError(
+        () =>
+          oracleProgram.methods
+            .cachePrice()
+            .accounts({
+              feedAccount: MOCK_SWITCHBOARD_FEED,
+              oracleFeed: tightFeedPda,
+            } as any)
+            .rpc(),
+        "ExcessiveConfidence"
+      );
+    });
+
+    it("rejects when num_samples below min_samples", async () => {
+      // Mock has num_samples=5, set min_samples=10 → should fail
+      const samplePair = encodePair("SAMP");
+      const [sampleFeedPda] = getOracleFeedPda(configPda, samplePair);
+
+      await oracleProgram.methods
+        .initializeFeed({
+          pair: samplePair,
+          feedAccount: MOCK_SWITCHBOARD_FEED,
+          feedType: 0,
+          maxStaleness: 4_294_967_295,
+          minSamples: 10, // mock only has 5
+          maxConfidence: new anchor.BN(100_000),
+          priceDecimals: 6,
+          switchboardProgram: SWITCHBOARD_MAINNET,
+        })
+        .accounts({
+          authority: authority.publicKey,
+          config: configPda,
+          oracleFeed: sampleFeedPda,
+          systemProgram: SystemProgram.programId,
+        } as any)
+        .signers([authority])
+        .rpc();
+
+      await assertError(
+        () =>
+          oracleProgram.methods
+            .cachePrice()
+            .accounts({
+              feedAccount: MOCK_SWITCHBOARD_FEED,
+              oracleFeed: sampleFeedPda,
+            } as any)
+            .rpc(),
+        "InvalidSwitchboardData"
+      );
+    });
+
     it("rejects feed key mismatch", async () => {
       const wrongFeed = Keypair.generate();
       const [oracleFeedPda] = getOracleFeedPda(configPda, eurPair);

@@ -3,6 +3,7 @@ members = [
     "programs/sss-token",
     "programs/transfer-hook",
 ]
+exclude = ["tui"]
 resolver = "2"
 
 [profile.release]

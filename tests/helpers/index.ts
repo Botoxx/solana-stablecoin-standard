@@ -22,9 +22,11 @@ import {
   getRolePda,
   getBlacklistPda,
   getExtraAccountMetasPda,
+  getOracleFeedPda,
   RoleType,
   SSS_TOKEN_PROGRAM_ID,
   TRANSFER_HOOK_PROGRAM_ID,
+  SSS_ORACLE_PROGRAM_ID,
 } from "./pda";
 
 export {
@@ -33,9 +35,11 @@ export {
   getRolePda,
   getBlacklistPda,
   getExtraAccountMetasPda,
+  getOracleFeedPda,
   RoleType,
   SSS_TOKEN_PROGRAM_ID,
   TRANSFER_HOOK_PROGRAM_ID,
+  SSS_ORACLE_PROGRAM_ID,
 };
 
 export async function airdropSol(

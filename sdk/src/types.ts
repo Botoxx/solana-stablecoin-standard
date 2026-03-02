@@ -115,3 +115,57 @@ export interface BlacklistState {
   active: boolean;
   bump: number;
 }
+
+// ==================== Oracle Types ====================
+
+export const FeedType = {
+  Switchboard: 0,
+  Manual: 1,
+} as const;
+
+export type FeedTypeValue = (typeof FeedType)[keyof typeof FeedType];
+
+export interface InitFeedParams {
+  pair: string;
+  feedAccount: PublicKey;
+  feedType: FeedTypeValue;
+  maxStaleness: number;
+  minSamples: number;
+  maxConfidence: BN;
+  priceDecimals: number;
+  switchboardProgram: PublicKey;
+}
+
+export interface FeedConfigUpdates {
+  maxStaleness?: number;
+  minSamples?: number;
+  maxConfidence?: BN;
+  priceDecimals?: number;
+  enabled?: boolean;
+  feedAccount?: PublicKey;
+}
+
+export interface OracleFeedConfig {
+  config: PublicKey;
+  authority: PublicKey;
+  feedAccount: PublicKey;
+  switchboardProgram: PublicKey;
+  pair: string;
+  maxStaleness: number;
+  minSamples: number;
+  maxConfidence: BN;
+  priceDecimals: number;
+  enabled: boolean;
+  feedType: number;
+  lastCachedPrice: BN;
+  lastCachedSlot: BN;
+  lastCachedTs: BN;
+  bump: number;
+}
+
+export interface CachedPrice {
+  price: BN;
+  slot: BN;
+  timestamp: BN;
+  decimals: number;
+}

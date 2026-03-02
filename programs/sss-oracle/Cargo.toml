@@ -1,0 +1,22 @@
+[package]
+name = "sss-oracle"
+version = "0.1.0"
+description = "Solana Stablecoin Standard — oracle integration module for non-USD pegged stablecoins"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sss_oracle"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+solana-security-txt = "1.1.1"
+bytemuck = { version = "1", features = ["derive"] }

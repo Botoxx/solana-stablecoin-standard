@@ -2067,6 +2067,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sss-oracle"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "bytemuck",
+ "solana-security-txt",
+]
+
+[[package]]
 name = "sss-token"
 version = "0.1.0"
 dependencies = [

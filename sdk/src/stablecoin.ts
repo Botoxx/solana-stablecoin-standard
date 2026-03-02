@@ -15,6 +15,7 @@ import {
 } from "@solana/spl-token";
 import { SssToken } from "./idl/sss_token";
 import { TransferHook } from "./idl/transfer_hook";
+import { SssOracle } from "./idl/sss_oracle";
 import {
   getConfigPda,
   getMinterPda,
@@ -37,10 +38,12 @@ import {
   Preset,
 } from "./types";
 import { ComplianceModule } from "./compliance";
+import { OracleModule } from "./oracle";
 import { resolveExtensions } from "./presets";
 
 import sssTokenIdl from "./idl/sss_token.json";
 import transferHookIdl from "./idl/transfer_hook.json";
+import sssOracleIdl from "./idl/sss_oracle.json";
 
 function createProvider(connection: Connection, authority: Keypair): AnchorProvider {
   const wallet = new Wallet(authority);
@@ -54,6 +57,7 @@ function isAccountNotFoundError(err: any): boolean {
 
 export class SolanaStablecoin {
   public readonly compliance: ComplianceModule;
+  public readonly oracle: OracleModule;
   public readonly mintAddress: PublicKey;
 
   private _authority: Keypair;
@@ -61,6 +65,7 @@ export class SolanaStablecoin {
   private constructor(
     public readonly program: Program<SssToken>,
     public readonly hookProgram: Program<TransferHook> | null,
+    public readonly oracleProgram: Program<SssOracle>,
     public readonly connection: Connection,
     public readonly configPda: PublicKey,
     mint: PublicKey,
@@ -74,6 +79,11 @@ export class SolanaStablecoin {
       mint,
       () => this._authority
     );
+    this.oracle = new OracleModule(
+      oracleProgram,
+      configPda,
+      () => this._authority
+    );
   }
 
   get authority(): PublicKey {
@@ -83,10 +93,12 @@ export class SolanaStablecoin {
   private static getPrograms(provider: AnchorProvider): {
     program: Program<SssToken>;
     hookProgram: Program<TransferHook>;
+    oracleProgram: Program<SssOracle>;
   } {
     const program = new Program<SssToken>(sssTokenIdl as any, provider);
     const hookProgram = new Program<TransferHook>(transferHookIdl as any, provider);
-    return { program, hookProgram };
+    const oracleProgram = new Program<SssOracle>(sssOracleIdl as any, provider);
+    return { program, hookProgram, oracleProgram };
   }
 
   /**
@@ -109,7 +121,7 @@ export class SolanaStablecoin {
   ): Promise<SolanaStablecoin> {
     const { authority } = params;
     const provider = createProvider(connection, authority);
-    const { program, hookProgram } = SolanaStablecoin.getPrograms(provider);
+    const { program, hookProgram, oracleProgram } = SolanaStablecoin.getPrograms(provider);
 
     const ext = resolveExtensions(params.preset, params.extensions);
     const mint = Keypair.generate();
@@ -154,6 +166,7 @@ export class SolanaStablecoin {
     return new SolanaStablecoin(
       program,
       ext.transferHook ? hookProgram : null,
+      oracleProgram,
       connection,
       configPda,
       mint.publicKey,
@@ -170,11 +183,12 @@ export class SolanaStablecoin {
     authority: Keypair
   ): Promise<SolanaStablecoin> {
     const provider = createProvider(connection, authority);
-    const { program, hookProgram } = SolanaStablecoin.getPrograms(provider);
+    const { program, hookProgram, oracleProgram } = SolanaStablecoin.getPrograms(provider);
     const config = await program.account.stablecoinConfig.fetch(configPda);
     return new SolanaStablecoin(
       program,
       config.enableTransferHook ? hookProgram : null,
+      oracleProgram,
       connection,
       configPda,
       config.mint,

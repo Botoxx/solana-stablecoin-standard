@@ -165,6 +165,10 @@ export class OracleModule {
 }
 
 export function encodePair(s: string): Buffer {
+  const byteLen = Buffer.byteLength(s, "utf8");
+  if (byteLen > 12) {
+    throw new Error(`Pair "${s}" is ${byteLen} bytes but max is 12`);
+  }
   const buf = Buffer.alloc(12, 0);
   buf.write(s, "utf8");
   return buf;

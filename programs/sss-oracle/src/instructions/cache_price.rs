@@ -113,7 +113,8 @@ pub fn handler(ctx: Context<CachePrice>) -> Result<()> {
     );
 
     // Check staleness
-    let current_slot = Clock::get()?.slot;
+    let clock = Clock::get()?;
+    let current_slot = clock.slot;
     let slot_diff = current_slot.saturating_sub(last_update_slot);
     require!(
         slot_diff <= oracle_feed.max_staleness as u64,
@@ -122,34 +123,32 @@ pub fn handler(ctx: Context<CachePrice>) -> Result<()> {
 
     // Convert Switchboard 18-decimal fixed-point i128 to u64 with target decimals
     let price = switchboard_to_u64(value, oracle_feed.price_decimals)?;
-    require!(price > 0, OracleError::InvalidPrice);
 
     // Check confidence (std_dev converted to same scale)
+    // max_confidence == 0 means confidence check is disabled
     if oracle_feed.max_confidence > 0 {
-        let confidence = switchboard_to_u64(std_dev.abs(), oracle_feed.price_decimals)?;
+        let abs_std_dev = std_dev.saturating_abs();
+        let confidence = switchboard_to_u64(abs_std_dev, oracle_feed.price_decimals)?;
         require!(
             confidence <= oracle_feed.max_confidence,
             OracleError::ExcessiveConfidence
         );
     }
 
-    let clock = Clock::get()?;
+    let timestamp = clock.unix_timestamp;
 
-    let pair_str = core::str::from_utf8(&oracle_feed.pair)
-        .unwrap_or("???")
-        .trim_end_matches('\0')
-        .to_string();
+    let pair_str = pair_bytes_to_string(&oracle_feed.pair);
 
     oracle_feed.last_cached_price = price;
     oracle_feed.last_cached_slot = current_slot;
-    oracle_feed.last_cached_ts = clock.unix_timestamp;
+    oracle_feed.last_cached_ts = timestamp;
 
     emit!(PriceCachedEvent {
         feed_pda: ctx.accounts.oracle_feed.key(),
         pair: pair_str,
         price,
         slot: current_slot,
-        timestamp: clock.unix_timestamp,
+        timestamp,
     });
 
     Ok(())
@@ -178,9 +177,7 @@ fn read_u64(data: &[u8], offset: usize) -> Result<u64> {
 /// E.g. value = 1_085_000_000_000_000_000 (1.085 in 18-decimal)
 ///      price_decimals = 6 → divide by 10^12 → 1_085_000
 fn switchboard_to_u64(value: i128, price_decimals: u8) -> Result<u64> {
-    if value <= 0 {
-        return Ok(0);
-    }
+    require!(value > 0, OracleError::InvalidPrice);
 
     let scale_diff = SWITCHBOARD_DECIMALS
         .checked_sub(price_decimals)
@@ -195,4 +192,16 @@ fn switchboard_to_u64(value: i128, price_decimals: u8) -> Result<u64> {
         .ok_or(error!(OracleError::Overflow))?;
 
     u64::try_from(result).map_err(|_| error!(OracleError::Overflow))
+}
+
+/// Convert a pair byte array to a string for event logging.
+/// Falls back to hex representation if bytes are not valid UTF-8.
+pub(crate) fn pair_bytes_to_string(pair: &[u8; 12]) -> String {
+    match core::str::from_utf8(pair) {
+        Ok(s) => s.trim_end_matches('\0').to_string(),
+        Err(_) => {
+            let hex: Vec<String> = pair.iter().map(|b| format!("{:02x}", b)).collect();
+            format!("0x{}", hex.join(""))
+        }
+    }
 }

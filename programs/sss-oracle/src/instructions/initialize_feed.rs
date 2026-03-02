@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::error::OracleError;
 use crate::events::FeedInitializedEvent;
+use crate::instructions::cache_price::pair_bytes_to_string;
 use crate::state::OracleFeedConfig;
 use crate::validation::read_config_authority;
 
@@ -87,10 +88,7 @@ pub fn handler(ctx: Context<InitializeFeed>, params: InitFeedParams) -> Result<(
     oracle_feed.bump = ctx.bumps.oracle_feed;
     oracle_feed._reserved = [0u8; 64];
 
-    let pair_str = core::str::from_utf8(&params.pair)
-        .unwrap_or("???")
-        .trim_end_matches('\0')
-        .to_string();
+    let pair_str = pair_bytes_to_string(&params.pair);
 
     emit!(FeedInitializedEvent {
         config: ctx.accounts.config.key(),

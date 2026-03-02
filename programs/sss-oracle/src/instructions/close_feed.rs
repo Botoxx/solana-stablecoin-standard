@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::error::OracleError;
 use crate::events::FeedClosedEvent;
+use crate::instructions::cache_price::pair_bytes_to_string;
 use crate::state::OracleFeedConfig;
 
 #[derive(Accounts)]
@@ -23,10 +24,7 @@ pub fn handler(ctx: Context<CloseFeed>) -> Result<()> {
     let clock = Clock::get()?;
     let oracle_feed = &ctx.accounts.oracle_feed;
 
-    let pair_str = core::str::from_utf8(&oracle_feed.pair)
-        .unwrap_or("???")
-        .trim_end_matches('\0')
-        .to_string();
+    let pair_str = pair_bytes_to_string(&oracle_feed.pair);
     let feed_pda = oracle_feed.key();
 
     emit!(FeedClosedEvent {

@@ -47,8 +47,14 @@ pub fn handler(ctx: Context<UpdateFeedConfig>, params: UpdateFeedParams) -> Resu
     }
     if let Some(v) = params.price_decimals {
         require!(v <= MAX_PRICE_DECIMALS, OracleError::InvalidDecimals);
-        oracle_feed.price_decimals = v;
-        changed.push("price_decimals");
+        if v != oracle_feed.price_decimals {
+            oracle_feed.price_decimals = v;
+            // Invalidate cached price — decimal change alters its interpretation
+            oracle_feed.last_cached_price = 0;
+            oracle_feed.last_cached_slot = 0;
+            oracle_feed.last_cached_ts = 0;
+            changed.push("price_decimals");
+        }
     }
     if let Some(v) = params.enabled {
         oracle_feed.enabled = v;
@@ -59,14 +65,16 @@ pub fn handler(ctx: Context<UpdateFeedConfig>, params: UpdateFeedParams) -> Resu
         changed.push("feed_account");
     }
 
-    let field_changed = changed.join(",");
-
-    emit!(FeedConfigUpdatedEvent {
-        feed_pda: ctx.accounts.oracle_feed.key(),
-        authority: ctx.accounts.authority.key(),
-        field_changed,
-        timestamp: clock.unix_timestamp,
-    });
+    // Only emit event if at least one field was actually changed
+    if !changed.is_empty() {
+        let field_changed = changed.join(",");
+        emit!(FeedConfigUpdatedEvent {
+            feed_pda: ctx.accounts.oracle_feed.key(),
+            authority: ctx.accounts.authority.key(),
+            field_changed,
+            timestamp: clock.unix_timestamp,
+        });
+    }
 
     Ok(())
 }

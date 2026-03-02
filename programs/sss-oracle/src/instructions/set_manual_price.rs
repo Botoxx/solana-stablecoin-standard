@@ -14,6 +14,7 @@ pub struct SetManualPrice<'info> {
         seeds = [ORACLE_FEED_SEED, oracle_feed.config.as_ref(), oracle_feed.pair.as_ref()],
         bump = oracle_feed.bump,
         constraint = oracle_feed.authority == authority.key() @ OracleError::InvalidAuthority,
+        constraint = oracle_feed.enabled @ OracleError::FeedDisabled,
         constraint = oracle_feed.feed_type == FEED_TYPE_MANUAL @ OracleError::InvalidFeedType,
     )]
     pub oracle_feed: Account<'info, OracleFeedConfig>,

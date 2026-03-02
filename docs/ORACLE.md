@@ -151,6 +151,13 @@ Authority-only. Closes the feed PDA, zeros all data, and reclaims rent.
 5. **Owner verification** — feed_account must be owned by the stored switchboard_program (cluster-agnostic: mainnet `SBondMDrcV3K4kxZR1HNVT7osZxAHVHgYXL5Ze1oMUv`, devnet `Aio4gaXjXzJNVLtzwtNVmSqGKpANtXhybbkhtAC94ji2`)
 6. **Key binding** — feed_account key must match the stored value (prevents substitution)
 7. **Data zeroing** — close_feed zeros all account data before reclaiming rent
+8. **Decimal change safety** — changing `price_decimals` via `update_feed_config` automatically zeros the cached price, forcing a fresh price fetch before consumers see data
+9. **Negative price rejection** — Switchboard values that are zero or negative are rejected with `InvalidPrice` rather than silently converted
+
+### Known Limitations
+
+- **Authority divergence** — `OracleFeedConfig.authority` is copied from `StablecoinConfig` at initialization and not synced afterward. If the stablecoin authority is transferred via `transfer_authority`, the old authority retains control over existing oracle feeds. Workaround: close and recreate feeds after an authority transfer.
+- **Confidence check opt-out** — setting `max_confidence = 0` disables the confidence interval check entirely (any std_dev is accepted). To require near-zero uncertainty, set `max_confidence = 1`.
 
 ## SDK API Reference
 

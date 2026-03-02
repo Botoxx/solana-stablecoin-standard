@@ -18,6 +18,7 @@ Peer dependencies: `@coral-xyz/anchor ^0.31.1`, `@solana/web3.js ^1.98.0`, `@sol
 // Core classes
 export { SolanaStablecoin } from "./stablecoin";
 export { ComplianceModule } from "./compliance";
+export { OracleModule, encodePair, decodePair } from "./oracle";
 
 // PDA helpers
 export {
@@ -26,16 +27,20 @@ export {
   getRolePda,
   getBlacklistPda,
   getExtraAccountMetasPda,
+  getOracleFeedPda,
   SSS_TOKEN_PROGRAM_ID,
   TRANSFER_HOOK_PROGRAM_ID,
+  SSS_ORACLE_PROGRAM_ID,
 } from "./pda";
 
 // Types and constants
 export {
   Presets,
   RoleType,
+  FeedType,
   ROLE_TYPE_NAMES,
   type RoleTypeValue,
+  type FeedTypeValue,
   type CreateStablecoinParams,
   type StablecoinExtensions,
   type MintParams,
@@ -47,6 +52,10 @@ export {
   type MinterState,
   type RoleState,
   type BlacklistState,
+  type InitFeedParams,
+  type FeedConfigUpdates,
+  type OracleFeedConfig,
+  type CachedPrice,
   type Preset,
 } from "./types";
 
@@ -58,19 +67,21 @@ export { PRESET_EXTENSIONS, resolveExtensions } from "./presets";
 
 ## SolanaStablecoin
 
-Main entry point for all stablecoin operations. Wraps both the sss-token and transfer-hook Anchor programs.
+Main entry point for all stablecoin operations. Wraps three Anchor programs: `sss_token`, `transfer_hook`, and `sss_oracle`.
 
 ### Properties
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `program` | `Program<SssToken>` | Anchor program instance for sss-token |
+| `program` | `Program<SssToken>` | Anchor program instance for sss_token |
 | `hookProgram` | `Program<TransferHook> \| null` | Transfer hook program (null for SSS-1) |
+| `oracleProgram` | `Program<SssOracle>` | Anchor program instance for sss_oracle |
 | `connection` | `Connection` | Solana RPC connection |
 | `configPda` | `PublicKey` | Config PDA for this stablecoin |
 | `mintAddress` | `PublicKey` | Token mint address |
 | `authority` | `PublicKey` | Current authority public key (getter) |
 | `compliance` | `ComplianceModule` | Compliance operations (blacklist, seize) |
+| `oracle` | `OracleModule` | Oracle price feed operations |
 
 ### Static Methods
 
@@ -85,16 +96,9 @@ static async create(
 ): Promise<SolanaStablecoin>
 ```
 
-**Parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `connection` | `Connection` | Solana RPC connection |
-| `params` | `CreateStablecoinParams` | Token configuration (includes authority keypair) |
-
 The `params.preset` field selects a preset (`"sss-1"` or `"sss-2"`) which sets default extensions. The `params.extensions` field can override individual extensions. If neither is provided, SSS-1 defaults are used.
 
-When the resolved extensions include `transferHook: true`, this method also initializes the ExtraAccountMetaList PDA on the transfer-hook program.
+When the resolved extensions include `transferHook: true`, this method also initializes the ExtraAccountMetaList PDA on the transfer hook program.
 
 **Example (with preset):**
 
@@ -145,7 +149,9 @@ const config = await stable.getConfig();
 console.log(`Mint: ${stable.mintAddress.toBase58()}`);
 ```
 
-### Instance Methods -- Core Operations
+---
+
+### Core Operations
 
 #### `mint(params)`
 
@@ -236,7 +242,9 @@ const sig = await stable.transfer({
 });
 ```
 
-### Instance Methods -- Role Management
+---
+
+### Role Management
 
 #### `addRole(address, role)`
 
@@ -306,7 +314,9 @@ async updateMinterQuota(
 ): Promise<TransactionSignature>
 ```
 
-### Instance Methods -- Authority Transfer
+---
+
+### Authority Transfer
 
 #### `proposeAuthority(newAuthority)`
 
@@ -320,7 +330,7 @@ async proposeAuthority(
 
 #### `acceptAuthority(newAuthority)`
 
-Accepts a pending authority transfer. Must be signed by the proposed new authority. Also updates the internal `_authority` reference.
+Accepts a pending authority transfer. Must be signed by the proposed new authority. Also updates the internal `_authority` reference so subsequent calls use the new signer.
 
 ```typescript
 async acceptAuthority(
@@ -334,9 +344,12 @@ async acceptAuthority(
 // Two-step authority transfer
 await stable.proposeAuthority(newAuthorityPubkey);
 await stable.acceptAuthority(newAuthorityKeypair);
+// stable.authority now returns newAuthorityKeypair.publicKey
 ```
 
-### Instance Methods -- Queries
+---
+
+### Queries
 
 #### `getConfig()`
 
@@ -345,8 +358,6 @@ Fetches the current stablecoin configuration.
 ```typescript
 async getConfig(): Promise<StablecoinState>
 ```
-
-**Returns:** `StablecoinState` with all config fields.
 
 #### `getTotalSupply()`
 
@@ -399,7 +410,9 @@ Returns `true` if the address has an active blacklist entry. Delegates to `compl
 async isBlacklisted(address: PublicKey): Promise<boolean>
 ```
 
-### Instance Methods -- Token Account Helpers
+---
+
+### Token Account Helpers
 
 #### `getAssociatedTokenAddress(owner)`
 
@@ -506,7 +519,7 @@ const sig = await stable.compliance.seize(
 
 #### `getBlacklistEntry(address)`
 
-Fetches the blacklist entry for an address. Returns `null` if no entry exists.
+Fetches the blacklist entry for an address. Returns `null` if no entry exists (account not found). Throws on other RPC errors.
 
 ```typescript
 async getBlacklistEntry(
@@ -520,6 +533,221 @@ Convenience method. Returns `true` if the address has an active blacklist entry.
 
 ```typescript
 async isBlacklisted(address: PublicKey): Promise<boolean>
+```
+
+---
+
+## OracleModule
+
+Handles oracle price feed operations for non-USD pegged stablecoins. Accessible via `stable.oracle`.
+
+Supports two feed types:
+- **Switchboard On-Demand** (type 0) — decentralized oracle feeds for live FX rates
+- **Manual / CPI-indexed** (type 1) — authority-pushed prices for CPI-indexed or algorithmic pegs
+
+### Methods
+
+#### `initializeFeed(params)`
+
+Creates a new oracle feed config PDA. Requires the stablecoin authority.
+
+```typescript
+async initializeFeed(
+  params: InitFeedParams
+): Promise<TransactionSignature>
+```
+
+**Example (Switchboard feed):**
+
+```typescript
+import { FeedType } from "@stbr/sss-token";
+
+await stable.oracle.initializeFeed({
+  pair: "EUR/USD",
+  feedAccount: switchboardFeedPubkey,
+  feedType: FeedType.Switchboard,
+  maxStaleness: 100,       // ~40 seconds at 400ms slots
+  minSamples: 1,
+  maxConfidence: new BN(10_000),  // 0.01 with 6 decimals
+  priceDecimals: 6,
+  switchboardProgram: new PublicKey("Aio4gaXjXzJNVLtzwtNVmSqGKpANtXhybbkhtAC94ji2"),
+});
+```
+
+**Example (manual feed):**
+
+```typescript
+await stable.oracle.initializeFeed({
+  pair: "CPI",
+  feedAccount: PublicKey.default,   // not used for manual feeds
+  feedType: FeedType.Manual,
+  maxStaleness: 0,
+  minSamples: 0,
+  maxConfidence: new BN(0),
+  priceDecimals: 6,
+  switchboardProgram: PublicKey.default,
+});
+```
+
+#### `updateFeedConfig(pair, updates)`
+
+Updates feed parameters. All fields are optional — only provided fields are modified.
+
+```typescript
+async updateFeedConfig(
+  pair: string,
+  updates: FeedConfigUpdates
+): Promise<TransactionSignature>
+```
+
+**Example:**
+
+```typescript
+await stable.oracle.updateFeedConfig("EUR/USD", {
+  maxStaleness: 200,
+  enabled: false,
+});
+```
+
+Changing `priceDecimals` automatically zeros the cached price on-chain, forcing a fresh price fetch before consumers see data at the new scale.
+
+#### `cachePrice(pair, feedAccount)`
+
+Reads the current price from a Switchboard feed and caches it on-chain. Permissionless — anyone can call this (no signer required).
+
+```typescript
+async cachePrice(
+  pair: string,
+  feedAccount: PublicKey
+): Promise<TransactionSignature>
+```
+
+Only works for `feed_type == 0` (Switchboard). Validates staleness, confidence interval, and sample count on-chain.
+
+**Example:**
+
+```typescript
+// Anyone can refresh the cached price
+await stable.oracle.cachePrice("EUR/USD", switchboardFeedPubkey);
+```
+
+For client-side price refresh, bundle Switchboard's `pullIx` with `cachePrice` in a single transaction:
+
+```typescript
+import { PullFeed } from "@switchboard-xyz/on-demand";
+
+const [pullIx] = await PullFeed.fetchUpdateIx(connection, {
+  feed: switchboardFeedPubkey,
+  numSignatures: 3,
+});
+
+const cacheIx = await oracleProgram.methods
+  .cachePrice()
+  .accounts({ feedAccount: switchboardFeedPubkey, oracleFeed: feedPda })
+  .instruction();
+
+const tx = new Transaction().add(pullIx, cacheIx);
+await sendAndConfirmTransaction(connection, tx, [payer]);
+```
+
+#### `setManualPrice(pair, price)`
+
+Sets the cached price for a manual/CPI-indexed feed. Authority only.
+
+```typescript
+async setManualPrice(
+  pair: string,
+  price: BN
+): Promise<TransactionSignature>
+```
+
+Only works for `feed_type == 1` (Manual). Price must be greater than zero. Feed must be enabled.
+
+**Example:**
+
+```typescript
+// CPI index at 102.5 (6 decimals)
+await stable.oracle.setManualPrice("CPI", new BN(102_500_000));
+```
+
+#### `closeFeed(pair)`
+
+Closes the feed PDA, zeros all data, and reclaims rent to the authority.
+
+```typescript
+async closeFeed(pair: string): Promise<TransactionSignature>
+```
+
+#### `getFeedConfig(pair)`
+
+Fetches the oracle feed configuration. Returns `null` if no feed exists.
+
+```typescript
+async getFeedConfig(pair: string): Promise<OracleFeedConfig | null>
+```
+
+**Example:**
+
+```typescript
+const feed = await stable.oracle.getFeedConfig("EUR/USD");
+if (feed) {
+  console.log(`Type: ${feed.feedType === 0 ? "Switchboard" : "Manual"}`);
+  console.log(`Enabled: ${feed.enabled}`);
+  console.log(`Decimals: ${feed.priceDecimals}`);
+}
+```
+
+#### `getCachedPrice(pair)`
+
+Returns the cached price for a feed, or `null` if no price has been cached yet.
+
+```typescript
+async getCachedPrice(pair: string): Promise<CachedPrice | null>
+```
+
+**Example:**
+
+```typescript
+const price = await stable.oracle.getCachedPrice("EUR/USD");
+if (price) {
+  const human = price.price.toNumber() / 10 ** price.decimals;
+  console.log(`EUR/USD: ${human}`);
+}
+```
+
+#### `getAllFeeds()`
+
+Fetches all oracle feed configs for this stablecoin. Uses a `memcmp` filter on the config field.
+
+```typescript
+async getAllFeeds(): Promise<OracleFeedConfig[]>
+```
+
+### Standalone Helpers
+
+#### `encodePair(s)`
+
+Encodes a pair string into a 12-byte zero-padded buffer. Throws if the string exceeds 12 bytes.
+
+```typescript
+function encodePair(s: string): Buffer
+```
+
+#### `decodePair(bytes)`
+
+Decodes a 12-byte pair buffer back to a string, stripping trailing null bytes.
+
+```typescript
+function decodePair(bytes: number[] | Uint8Array): string
+```
+
+**Example:**
+
+```typescript
+import { encodePair, decodePair } from "@stbr/sss-token";
+
+const pair = encodePair("EUR/USD");  // Buffer(12)
+const str = decodePair(pair);        // "EUR/USD"
 ```
 
 ---
@@ -570,16 +798,47 @@ function getExtraAccountMetasPda(mint: PublicKey): [PublicKey, number]
 // Program: TRANSFER_HOOK_PROGRAM_ID
 ```
 
+### `getOracleFeedPda(config, pair)`
+
+```typescript
+function getOracleFeedPda(
+  config: PublicKey,
+  pair: Buffer | Uint8Array | number[]
+): [PublicKey, number]
+// Seeds: ["oracle-feed", config, pair]
+// Program: SSS_ORACLE_PROGRAM_ID
+```
+
+**Example:**
+
+```typescript
+import { getOracleFeedPda, encodePair } from "@stbr/sss-token";
+
+const [feedPda] = getOracleFeedPda(configPda, encodePair("EUR/USD"));
+```
+
 ### Constants
 
 ```typescript
 const SSS_TOKEN_PROGRAM_ID = new PublicKey("Fjv9YM4CUWFgQZQzLyD42JojLcDJ2yPG7WDEaR7U14n1");
 const TRANSFER_HOOK_PROGRAM_ID = new PublicKey("7z98ECJDGgRTZgnkX4iY8F6yqLBkiFKXJR2p51jrvUaj");
+const SSS_ORACLE_PROGRAM_ID = new PublicKey("ADuTfewteACQzaBpxB2ShicPZVgzW21XMA64Y84pg92k");
 ```
 
 ---
 
 ## Preset System
+
+### `Presets`
+
+```typescript
+const Presets = {
+  SSS_1: "sss-1",
+  SSS_2: "sss-2",
+} as const;
+
+type Preset = "sss-1" | "sss-2";
+```
 
 ### `PRESET_EXTENSIONS`
 
@@ -609,11 +868,21 @@ function resolveExtensions(
 ): Required<StablecoinExtensions>
 ```
 
+**Example:**
+
+```typescript
+// SSS-2 with frozen accounts
+const ext = resolveExtensions(Presets.SSS_2, { defaultAccountFrozen: true });
+// { permanentDelegate: true, transferHook: true, defaultAccountFrozen: true }
+```
+
 ---
 
 ## Type Definitions
 
-### `CreateStablecoinParams`
+### Core Types
+
+#### `CreateStablecoinParams`
 
 ```typescript
 interface CreateStablecoinParams {
@@ -628,7 +897,7 @@ interface CreateStablecoinParams {
 }
 ```
 
-### `StablecoinExtensions`
+#### `StablecoinExtensions`
 
 ```typescript
 interface StablecoinExtensions {
@@ -638,7 +907,7 @@ interface StablecoinExtensions {
 }
 ```
 
-### `StablecoinState`
+#### `StablecoinState`
 
 ```typescript
 interface StablecoinState {
@@ -658,7 +927,7 @@ interface StablecoinState {
 }
 ```
 
-### `MinterState`
+#### `MinterState`
 
 ```typescript
 interface MinterState {
@@ -670,7 +939,7 @@ interface MinterState {
 }
 ```
 
-### `RoleState`
+#### `RoleState`
 
 ```typescript
 interface RoleState {
@@ -683,7 +952,7 @@ interface RoleState {
 }
 ```
 
-### `BlacklistState`
+#### `BlacklistState`
 
 ```typescript
 interface BlacklistState {
@@ -697,7 +966,72 @@ interface BlacklistState {
 }
 ```
 
-### `RoleType`
+### Oracle Types
+
+#### `InitFeedParams`
+
+```typescript
+interface InitFeedParams {
+  pair: string;                     // e.g. "EUR/USD", max 12 bytes
+  feedAccount: PublicKey;           // Switchboard feed account (or default for manual)
+  feedType: FeedTypeValue;          // 0 = Switchboard, 1 = Manual
+  maxStaleness: number;             // max staleness in slots
+  minSamples: number;               // min oracle samples required
+  maxConfidence: BN;                // max std dev in price units
+  priceDecimals: number;            // decimal places for cached price (max 18)
+  switchboardProgram: PublicKey;    // cluster-specific Switchboard program ID
+}
+```
+
+#### `FeedConfigUpdates`
+
+```typescript
+interface FeedConfigUpdates {
+  maxStaleness?: number;
+  minSamples?: number;
+  maxConfidence?: BN;
+  priceDecimals?: number;
+  enabled?: boolean;
+  feedAccount?: PublicKey;
+}
+```
+
+#### `OracleFeedConfig`
+
+```typescript
+interface OracleFeedConfig {
+  config: PublicKey;
+  authority: PublicKey;
+  feedAccount: PublicKey;
+  switchboardProgram: PublicKey;
+  pair: string;                     // decoded from [u8; 12]
+  maxStaleness: number;
+  minSamples: number;
+  maxConfidence: BN;
+  priceDecimals: number;
+  enabled: boolean;
+  feedType: number;
+  lastCachedPrice: BN;
+  lastCachedSlot: BN;
+  lastCachedTs: BN;
+  bump: number;
+}
+```
+
+#### `CachedPrice`
+
+```typescript
+interface CachedPrice {
+  price: BN;
+  slot: BN;
+  timestamp: BN;
+  decimals: number;
+}
+```
+
+### Constants
+
+#### `RoleType`
 
 ```typescript
 const RoleType = {
@@ -711,15 +1045,15 @@ const RoleType = {
 type RoleTypeValue = 0 | 1 | 2 | 3 | 4;
 ```
 
-### `Presets`
+#### `FeedType`
 
 ```typescript
-const Presets = {
-  SSS_1: "sss-1",
-  SSS_2: "sss-2",
+const FeedType = {
+  Switchboard: 0,
+  Manual: 1,
 } as const;
 
-type Preset = "sss-1" | "sss-2";
+type FeedTypeValue = 0 | 1;
 ```
 
 ### Parameter Interfaces
@@ -758,15 +1092,29 @@ interface SeizeParams {
 
 ---
 
+## Error Handling
+
+Query methods (`getMinter`, `getRole`, `getBlacklistEntry`, `getFeedConfig`) return `null` when the account does not exist. They only catch "Account does not exist" and "Could not find" errors — all other RPC errors are re-thrown.
+
+```typescript
+// Safe — returns null for missing accounts
+const minter = await stable.getMinter(address);  // MinterState | null
+const feed = await stable.oracle.getFeedConfig("EUR/USD");  // OracleFeedConfig | null
+
+// Throws on non-account-not-found errors (network issues, etc.)
+```
+
+---
+
 ## Complete Example
 
 ```typescript
 import { Connection, Keypair } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
-import { SolanaStablecoin, Presets, RoleType } from "@stbr/sss-token";
+import { SolanaStablecoin, Presets, RoleType, FeedType } from "@stbr/sss-token";
 
 // Setup
-const connection = new Connection("http://localhost:8899", "confirmed");
+const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const authority = Keypair.generate();
 
 // 1. Create SSS-2 stablecoin
@@ -799,10 +1147,28 @@ const config = await stable.getConfig();
 const supply = await stable.getTotalSupply();
 const minterState = await stable.getMinter(minter.publicKey);
 const allMinters = await stable.getAllMinters();
-console.log(`Supply: ${supply.toString()}, Minter remaining: ${minterState.quotaRemaining.toString()}`);
+console.log(`Supply: ${supply}, Remaining quota: ${minterState.quotaRemaining}`);
 
 // 5. Compliance: blacklist and seize
 await stable.compliance.blacklistAdd(badActor, "OFAC SDN match", blacklister);
 await stable.freezeAccount(badActorAta);
 await stable.compliance.seize(badActorAta, treasuryAta, new BN(100_000_000), seizer);
+
+// 6. Oracle: non-USD peg
+await stable.oracle.initializeFeed({
+  pair: "EUR/USD",
+  feedAccount: switchboardFeedPubkey,
+  feedType: FeedType.Switchboard,
+  maxStaleness: 100,
+  minSamples: 1,
+  maxConfidence: new BN(10_000),
+  priceDecimals: 6,
+  switchboardProgram: new PublicKey("Aio4gaXjXzJNVLtzwtNVmSqGKpANtXhybbkhtAC94ji2"),
+});
+
+await stable.oracle.cachePrice("EUR/USD", switchboardFeedPubkey);
+const price = await stable.oracle.getCachedPrice("EUR/USD");
+if (price) {
+  console.log(`EUR/USD: ${price.price.toNumber() / 10 ** price.decimals}`);
+}
 ```

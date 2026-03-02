@@ -22,7 +22,7 @@ This is the preset to use for any stablecoin that needs to comply with US regula
 
 ## Token-2022 Extensions
 
-SSS-2 initializes four extensions at mint creation:
+SSS-2 initializes four extensions at mint creation (five with `defaultAccountFrozen`):
 
 | Extension | Purpose | Authority |
 |-----------|---------|-----------|
@@ -30,16 +30,17 @@ SSS-2 initializes four extensions at mint creation:
 | TokenMetadata | Name, symbol, URI on-chain | Config PDA (update authority) |
 | PermanentDelegate | Config PDA can burn from any token account | Config PDA (irrevocable) |
 | TransferHook | Routes all transfers through the hook program | Config PDA |
+| DefaultAccountState | New token accounts start frozen (when `defaultAccountFrozen: true`) | Config PDA |
 
 The permanent delegate cannot be revoked or reassigned by token account owners. It is a mint-wide authority. If the config PDA's authority key is compromised, the permanent delegate authority is compromised. This is why Squads multisig is recommended for production.
 
 ## RBAC Roles
 
-SSS-2 uses all 5 roles:
+SSS-2 uses all 6 roles:
 
 | Role | ID | Capabilities | Separation Rationale |
 |------|-----|-------------|---------------------|
-| **Master Authority** | N/A | Full control, role management, freeze/thaw | Single point of control |
+| **Master Authority** | N/A (stored in config) | Full control, role management, freeze/thaw | Single point of control |
 | **Minter** | 0 | Mint tokens (quota-limited) | Limits issuance authority |
 | **Burner** | 1 | Burn from own account | Separate from mint authority |
 | **Pauser** | 2 | Emergency pause/unpause | Independent of authority |
@@ -327,7 +328,7 @@ sss-token status --config <PDA>
 
 ## Error Handling
 
-SSS-2 compliance instructions fail gracefully on SSS-1 configurations:
+SSS-2 compliance instructions fail explicitly on SSS-1 configurations:
 
 | Instruction | SSS-1 Behavior |
 |-------------|----------------|
@@ -343,5 +344,6 @@ This is by design -- compliance features cannot be accidentally invoked on token
 - **Transfer hook adds latency**: Every transfer requires the hook program to execute. Extra account resolution adds ~2 accounts to each transfer instruction. This is ~5-10K additional CU per transfer.
 - **Blacklist PDA cost**: Each blacklist entry costs ~0.003 SOL in rent. For large-scale sanctions screening, budget for PDA creation costs.
 - **Freeze-before-seize**: The seize instruction enforces this check. An unfrozen account cannot be seized. This prevents accidental seizure of accounts that are still active.
+- **Seize bypasses pause**: The seize instruction has no pause check — intentional for GENIUS Act compliance. Law enforcement asset recovery must work even during emergency system pauses.
 - **Soft-delete audit trail**: Removing an address from the blacklist sets `active = false` but preserves the PDA. The original reason, operator, and timestamp remain queryable for audit purposes.
 - **Re-blacklisting**: An address that was previously removed can be re-blacklisted. The existing PDA is reactivated with updated reason, operator, and timestamp.

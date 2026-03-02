@@ -13,7 +13,7 @@ The Guiding and Establishing National Innovation for US Stablecoins (GENIUS) Act
 | **Audit trail** | All operations emit Anchor events with operator pubkey and Unix timestamp | On-chain events + off-chain indexer |
 | **Annual compliance certification** | Audit log queryable via compliance service (`GET /audit-log`); event indexer stores all state changes | Off-chain: compliance service + indexer |
 | **Issuance controls** | Per-minter quotas tracked in MinterConfig PDAs | On-chain: quota check before every mint |
-| **Role separation** | 5 distinct roles with PDA-based verification; Blacklister separate from Seizer | On-chain: RBAC via PDA seeds |
+| **Role separation** | 6 distinct roles with PDA-based verification; Blacklister separate from Seizer | On-chain: RBAC via PDA seeds |
 
 ## OFAC Screening Integration
 
@@ -145,6 +145,8 @@ Every state-changing instruction emits an Anchor event. Events are the primary a
 | BlacklistAddEvent | authority, address, reason, timestamp | Sanctions enforcement |
 | BlacklistRemoveEvent | authority, address, timestamp | Sanctions clearance |
 | SeizeEvent | authority, source, treasury, amount, timestamp | Asset confiscation |
+
+The oracle program (`sss_oracle`) emits 5 additional events (FeedInitialized, FeedConfigUpdated, PriceCached, ManualPriceSet, FeedClosed) — see [ORACLE.md](ORACLE.md) for details.
 
 ### Off-Chain Indexer
 

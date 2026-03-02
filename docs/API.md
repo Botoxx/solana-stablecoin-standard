@@ -42,6 +42,18 @@ curl http://localhost:3001/health
 }
 ```
 
+### Input Validation
+
+All services use shared validation functions from `services/shared/validation.ts`:
+
+| Function | Validates | Rules |
+|----------|-----------|-------|
+| `isValidPubkey(s)` | Solana public keys | Constructs `PublicKey(s)` — rejects if invalid base58 or wrong length |
+| `isValidAmount(s)` | Token amounts | Digits only, `> 0`, `<= 18446744073709551615` (u64 max). Uses BigInt to avoid IEEE 754 precision loss |
+| `isValidWebhookUrl(s)` | Webhook URLs | Must be `http:` or `https:`, no private IPs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`), no `localhost` |
+
+Pagination parameters (`limit`, `offset`) are clamped to safe ranges: `limit` between 1–1000, `offset` >= 0.
+
 ### Error Response Format
 
 All error responses follow:
@@ -58,7 +70,9 @@ All error responses follow:
 
 **Port:** 3001 (configurable via `PORT_INDEXER`)
 
-The indexer subscribes to on-chain program logs and stores parsed events. It provides a query API for event retrieval.
+The indexer subscribes to on-chain program logs via WebSocket (`connection.onLogs`) and stores parsed events in PostgreSQL. It provides a query API for event retrieval. Unknown events are logged but not stored or dispatched. Individual event parse failures do not prevent other events in the same transaction from being indexed.
+
+The indexer includes a WebSocket health check (30s interval) that auto-reconnects on stale connections.
 
 ### GET /events
 
@@ -132,7 +146,7 @@ curl "http://localhost:3001/events?offset=100&limit=50"
 
 **Port:** 3002 (configurable via `PORT_MINT_BURN`)
 
-Coordinates mint and burn operations via a request queue. Requests are stored in PostgreSQL and processed by a background executor that polls for pending requests.
+Coordinates mint and burn operations via a request queue. Requests are stored in PostgreSQL and processed by a background executor that polls for pending requests. On startup, the executor runs `reconcileStaleRequests()` to mark any requests stuck in `processing` for >10 minutes as stale (prevents double-mint on crash recovery). The executor uses an `onChainSuccess` flag to distinguish pre-tx from post-tx failures — only confirmed on-chain transactions are considered irreversible.
 
 ### POST /mint
 
@@ -503,6 +517,34 @@ Delete a webhook subscription.
 }
 ```
 
+### POST /dispatch (internal)
+
+Receive an event from the indexer and dispatch to all matching subscribers. Called by the indexer service, not by external clients.
+
+**Request Body:**
+
+```json
+{
+  "name": "MintEvent",
+  "authority": "Fg6P...xyz",
+  "timestamp": 1709049600,
+  "signature": "5KjR...abc",
+  "slot": 123456789,
+  "data": { "minter": "Fg6P...xyz", "recipient": "Hk9Q...def", "amount": "100000000" }
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "dispatched": true,
+  "event": "MintEvent"
+}
+```
+
+Dispatch is parallel via `Promise.allSettled()` — one dead subscriber does not block others. Each delivery is protected by DNS rebinding checks at dispatch time (not just registration time) via `dns.resolve4()` + private IP validation. Per-delivery timeout: 10 seconds.
+
 ### Webhook Payload Format
 
 When an event matches a subscription, the service delivers a POST request to the subscribed URL:
@@ -567,6 +609,15 @@ Failed deliveries (non-2xx response or timeout) are retried with exponential bac
 
 After 5 failed attempts, the delivery is marked as failed and the subscription is deactivated. Reactivate by creating a new subscription.
 
+### URL Security
+
+Webhook URLs are validated at two points:
+
+1. **Registration time**: `isValidWebhookUrl()` rejects private IPs, localhost, and non-HTTP(S) protocols
+2. **Dispatch time**: `checkDnsRebinding()` re-resolves the hostname via `dns.resolve4()` and blocks delivery if any resolved IP is private
+
+This dual-check prevents DNS rebinding attacks where a hostname resolves to a public IP at registration but is later re-pointed to an internal IP.
+
 ---
 
 ## Service Dependencies
@@ -589,4 +640,18 @@ After 5 failed attempts, the delivery is marked as failed and the subscription i
             +---------+ +--------+
 ```
 
-All services share the PostgreSQL database. The mint-burn service uses PostgreSQL polling for job processing. The indexer connects directly to the Solana RPC node for log subscription.
+All services share the PostgreSQL database. The mint-burn service uses PostgreSQL polling for job processing (Redis is available in the Docker Compose stack but not currently used for queuing). The indexer connects directly to the Solana RPC node via WebSocket for real-time log subscription.
+
+### Environment Variables
+
+| Variable | Service | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | All | PostgreSQL connection string |
+| `RPC_URL` | Indexer, Mint-Burn | Solana RPC endpoint |
+| `API_SECRET` | All | Bearer token for authentication (unset = dev mode) |
+| `OFAC_API_URL` | Compliance | OFAC screening API (unset = stub mode) |
+| `AUTHORITY_KEYPAIR` | Mint-Burn | Path to the authority keypair JSON for signing transactions |
+| `PORT_INDEXER` | Indexer | HTTP port (default: 3001) |
+| `PORT_MINT_BURN` | Mint-Burn | HTTP port (default: 3002) |
+| `PORT_COMPLIANCE` | Compliance | HTTP port (default: 3003) |
+| `PORT_WEBHOOK` | Webhook | HTTP port (default: 3004) |

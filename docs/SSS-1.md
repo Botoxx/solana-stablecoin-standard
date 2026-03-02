@@ -18,7 +18,7 @@ SSS-1 is designed for internal tokens, DAO treasuries, synthetic assets, and any
 | **Freeze** | Freeze individual token accounts (Master Authority) |
 | **Thaw** | Unfreeze frozen token accounts (Master Authority) |
 | **Pause / Unpause** | Global system pause that blocks minting and burning (Pauser role) |
-| **RBAC** | Minter (with quotas), Burner, Pauser roles |
+| **RBAC** | Master Authority + Minter (with quotas), Burner, Pauser — 4 of 6 roles |
 | **Minter quotas** | Per-minter issuance limits, configurable by authority |
 | **Authority transfer** | Two-step propose-accept transfer of master authority |
 | **On-chain metadata** | Name, symbol, URI stored via Token-2022 metadata extension |
@@ -54,16 +54,16 @@ That's it. No PermanentDelegate, no TransferHook, no DefaultAccountState.
 
 ## RBAC Roles
 
-SSS-1 uses 3 of the 5 available roles:
+SSS-1 uses 4 of the 6 distinct roles:
 
 | Role | ID | Capabilities |
 |------|-----|-------------|
-| **Master Authority** | N/A (stored in config) | Assign/revoke all roles, manage minters, freeze/thaw accounts, transfer authority |
+| **Master Authority** | N/A (stored in `StablecoinConfig.authority`) | Assign/revoke all roles, manage minters, freeze/thaw accounts, transfer authority |
 | **Minter** | 0 | Mint tokens up to allocated quota |
 | **Burner** | 1 | Burn tokens from own account |
 | **Pauser** | 2 | Pause and unpause the system |
 
-The Blacklister (3) and Seizer (4) roles can technically be assigned on an SSS-1 config, but the compliance instructions (`add_to_blacklist`, `seize`) will fail with `ComplianceNotEnabled` because the config flags are false.
+The Blacklister (3) and Seizer (4) roles can technically be assigned on an SSS-1 config, but the compliance instructions (`add_to_blacklist`, `seize`) will fail with `ComplianceNotEnabled` because `enable_transfer_hook` and `enable_permanent_delegate` are false.
 
 ## Initialization Flow
 
